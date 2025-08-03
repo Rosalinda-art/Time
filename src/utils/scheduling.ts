@@ -46,6 +46,23 @@ export const formatTimeForTimer = (seconds: number): string => {
 };
 
 /**
+ * Helper function to calculate hours already allocated to a task on locked days
+ */
+const calculateLockedHours = (taskId: string, studyPlans: StudyPlan[]): number => {
+  let lockedHours = 0;
+  studyPlans.forEach(plan => {
+    if (plan.isLocked) {
+      plan.plannedTasks.forEach(session => {
+        if (session.taskId === taskId) {
+          lockedHours += session.allocatedHours;
+        }
+      });
+    }
+  });
+  return lockedHours;
+};
+
+/**
  * Check if a task's frequency preference conflicts with its deadline
  * @param task Task to check
  * @param settings User settings including buffer days and work days
