@@ -832,7 +832,21 @@ export const generateNewStudyPlan = (
     // Global redistribution pass: try to fit any remaining unscheduled hours
     const tasksWithUnscheduledHours = tasksEven.filter(task => {
       const scheduledHours = taskScheduledHours[task.id] || 0;
-      return task.estimatedHours - scheduledHours > 0;
+
+      // Calculate locked hours for this task
+      let lockedHours = 0;
+      studyPlans.forEach(plan => {
+        if (plan.isLocked) {
+          plan.plannedTasks.forEach(session => {
+            if (session.taskId === task.id) {
+              lockedHours += session.allocatedHours;
+            }
+          });
+        }
+      });
+
+      const adjustedEstimatedHours = Math.max(0, task.estimatedHours - lockedHours);
+      return adjustedEstimatedHours - scheduledHours > 0;
     });
     
     if (tasksWithUnscheduledHours.length > 0) {
