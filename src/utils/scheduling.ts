@@ -403,6 +403,18 @@ export const generateNewStudyPlan = (
     });
   }
 
+  // Calculate hours already scheduled on locked days for each task
+  const lockedDayHoursByTask: { [taskId: string]: number } = {};
+  existingStudyPlans.forEach(plan => {
+    if (plan.isLocked) {
+      plan.plannedTasks.forEach(session => {
+        if (session.status !== 'skipped') {
+          lockedDayHoursByTask[session.taskId] = (lockedDayHoursByTask[session.taskId] || 0) + session.allocatedHours;
+        }
+      });
+    }
+  });
+
   if (settings.studyPlanMode === 'even') {
     // EVEN DISTRIBUTION LOGIC
     // Separate deadline-based tasks from no-deadline tasks
@@ -601,120 +613,86 @@ export const generateNewStudyPlan = (
           sessionsByTask[session.taskId].push(session);
         });
         
+        // Combine sessions for each task
         const combinedSessions: StudySession[] = [];
-        
-        // Combine sessions for each task - only if they are truly adjacent
         Object.entries(sessionsByTask).forEach(([taskId, sessions]) => {
-          if (sessions.length > 1) {
-            // Sort sessions by start time
-            sessions.sort((a, b) => a.startTime.localeCompare(b.startTime));
-
-            // Group adjacent sessions together
-            let currentGroup: StudySession[] = [sessions[0]];
-            const sessionGroups: StudySession[][] = [];
-
-            for (let i = 1; i < sessions.length; i++) {
-              const currentSession = sessions[i];
-              const lastInGroup = currentGroup[currentGroup.length - 1];
-
-              // Check if sessions are adjacent (current starts when last ends)
-              if (currentSession.startTime === lastInGroup.endTime) {
-                currentGroup.push(currentSession);
-              } else {
-                // Not adjacent, start a new group
-                sessionGroups.push(currentGroup);
-                currentGroup = [currentSession];
+          if (sessions.length === 1) {
+            // Only one session, keep as is
+            combinedSessions.push(sessions[0]);
+          } else {
+            // Multiple sessions, combine them
+            const totalHours = sessions.reduce((sum, session) => sum + session.allocatedHours, 0);
+            const firstSession = sessions[0];
+            
+            // Find the earliest start time and latest end time
+            let earliestStart = firstSession.startTime;
+            let latestEnd = firstSession.endTime;
+            
+            sessions.forEach(session => {
+              if (session.startTime && (!earliestStart || session.startTime < earliestStart)) {
+                earliestStart = session.startTime;
               }
-            }
-            // Add the last group
-            sessionGroups.push(currentGroup);
-
-            // Combine each group of adjacent sessions
-            sessionGroups.forEach((group, groupIndex) => {
-              if (group.length > 1) {
-                const firstSession = group[0];
-                const lastSession = group[group.length - 1];
-                const totalHours = group.reduce((sum, session) => sum + session.allocatedHours, 0);
-
-                const combinedSession: StudySession = {
-                  ...firstSession,
-                  startTime: firstSession.startTime,
-                  endTime: lastSession.endTime,
-                  allocatedHours: totalHours,
-                  sessionNumber: groupIndex + 1
-                };
-
-                combinedSessions.push(combinedSession);
-              } else {
-                // Single session in group, keep as is but update session number
-                combinedSessions.push({
-                  ...group[0],
-                  sessionNumber: groupIndex + 1
-                });
+              if (session.endTime && (!latestEnd || session.endTime > latestEnd)) {
+                latestEnd = session.endTime;
               }
             });
-          } else {
-            // Single session, keep as is
-            combinedSessions.push(sessions[0]);
+            
+            const combinedSession: StudySession = {
+              ...firstSession,
+              allocatedHours: Math.round(totalHours * 60) / 60,
+              startTime: earliestStart,
+              endTime: latestEnd,
+              sessionNumber: 1 // Combined session gets number 1
+            };
+            
+            combinedSessions.push(combinedSession);
           }
         });
         
-        // Update the plan with combined sessions (keeping skipped sessions separate)
-        const skippedSessions = plan.plannedTasks.filter(session => session.status === 'skipped');
-        plan.plannedTasks = [...combinedSessions, ...skippedSessions];
-        
-        // Calculate totalStudyHours including skipped sessions as "done"
-        plan.totalStudyHours = calculateTotalStudyHours(plan.plannedTasks);
+        plan.plannedTasks = combinedSessions;
+        plan.totalStudyHours = Math.round(combinedSessions.reduce((sum, session) => sum + session.allocatedHours, 0) * 60) / 60;
       }
     };
 
-
-
-    // For each task, distribute hours evenly across available days until deadline
+    // Step 2: Schedule tasks
     for (const task of tasksEven) {
+      // Calculate how many hours are already scheduled on locked days for this task
+      const lockedDayHours = lockedDayHoursByTask[task.id] || 0;
+      
+      // Calculate remaining hours to schedule (total - locked day hours)
+      const remainingHoursToSchedule = task.estimatedHours - lockedDayHours;
+      
+      if (remainingHoursToSchedule <= 0) {
+        // All hours are already scheduled on locked days
+        console.log(`Task "${task.title}" has all ${task.estimatedHours} hours already scheduled on locked days`);
+        continue;
+      }
+      
+      console.log(`Task "${task.title}" has ${lockedDayHours} hours on locked days, ${remainingHoursToSchedule} hours remaining to schedule`);
+      
+      // Get deadline for this task
       const deadline = new Date(task.deadline);
       if (settings.bufferDays > 0) {
         deadline.setDate(deadline.getDate() - settings.bufferDays);
       }
-      // Normalize deadline to start of day for comparison with date strings
       const deadlineDateStr = deadline.toISOString().split('T')[0];
-      // Include all available days up to and including the deadline day
+      
+      // Filter available days to respect deadline and exclude locked days
       let daysForTask = availableDays.filter(d => d <= deadlineDateStr);
       
-      // Apply frequency preference if enabled and no conflict detected
-      if (task.respectFrequencyForDeadlines !== false && task.targetFrequency) {
-        const conflictCheck = checkFrequencyDeadlineConflict(task, settings);
-        
-        if (!conflictCheck.hasConflict) {
-          // Apply frequency filtering to respect user preference
-          let sessionGap = 1; // Days between sessions
-          if (task.targetFrequency === 'weekly') sessionGap = 7;
-          else if (task.targetFrequency === '3x-week') sessionGap = 2;
-          else if (task.targetFrequency === 'flexible') {
-            // For flexible tasks, adapt the gap based on available time and task urgency
-            sessionGap = task.importance ? 2 : 3; // More frequent for important tasks
-          }
-          // daily frequency uses sessionGap = 1 (no filtering needed)
-          
-          if (sessionGap > 1) {
-            // Filter days to respect frequency preference
-            const frequencyFilteredDays: string[] = [];
-            for (let i = 0; i < daysForTask.length; i += sessionGap) {
-              frequencyFilteredDays.push(daysForTask[i]);
-            }
-            daysForTask = frequencyFilteredDays;
-          }
-        }
-      }
-      
-
+      // Remove locked days from the distribution list
+      daysForTask = daysForTask.filter(date => {
+        const dayPlan = studyPlans.find(p => p.date === date);
+        return !dayPlan?.isLocked;
+      });
       
       // If no days available, skip this task
       if (daysForTask.length === 0) {
         continue;
       }
       
-      let totalHours = task.estimatedHours;
+      // Use the remaining hours instead of total hours
+      let totalHours = remainingHoursToSchedule;
       
       // Use optimized session distribution instead of simple even distribution
       const sessionLengths = optimizeSessionDistribution(task, totalHours, daysForTask, settings);
@@ -791,6 +769,11 @@ export const generateNewStudyPlan = (
         }
       }
     }
+    
+    // Add locked day hours to the scheduled hours count
+    Object.keys(lockedDayHoursByTask).forEach(taskId => {
+      taskScheduledHours[taskId] = (taskScheduledHours[taskId] || 0) + lockedDayHoursByTask[taskId];
+    });
     
     // Global redistribution pass: try to fit any remaining unscheduled hours
     const tasksWithUnscheduledHours = tasksEven.filter(task => {
@@ -1293,17 +1276,37 @@ export const generateNewStudyPlan = (
 
       // Distribute tier tasks evenly across available days until their deadlines
       for (const task of tierTasks) {
+        // Calculate how many hours are already scheduled on locked days for this task
+        const lockedDayHours = lockedDayHoursByTask[task.id] || 0;
+        
+        // Calculate remaining hours to schedule (total - locked day hours)
+        const remainingHoursToSchedule = task.estimatedHours - lockedDayHours;
+        
+        if (remainingHoursToSchedule <= 0) {
+          // All hours are already scheduled on locked days
+          console.log(`Task "${task.title}" has all ${task.estimatedHours} hours already scheduled on locked days (Balanced mode)`);
+          continue;
+        }
+        
+        console.log(`Task "${task.title}" has ${lockedDayHours} hours on locked days, ${remainingHoursToSchedule} hours remaining to schedule (Balanced mode)`);
+        
         const deadline = new Date(task.deadline);
         if (settings.bufferDays > 0) {
           deadline.setDate(deadline.getDate() - settings.bufferDays);
         }
         const deadlineDateStr = deadline.toISOString().split('T')[0];
-        const daysForTask = availableDays.filter(d => d <= deadlineDateStr);
+        let daysForTask = availableDays.filter(d => d <= deadlineDateStr);
+        
+        // Remove locked days from the distribution list
+        daysForTask = daysForTask.filter(date => {
+          const dayPlan = studyPlans.find(p => p.date === date);
+          return !dayPlan?.isLocked;
+        });
 
         if (daysForTask.length === 0) continue;
 
-        // Use optimized session distribution for even spreading
-        const sessionLengths = optimizeSessionDistribution(task, task.estimatedHours, daysForTask, settings);
+        // Use optimized session distribution for remaining hours
+        const sessionLengths = optimizeSessionDistribution(task, remainingHoursToSchedule, daysForTask, settings);
 
         let unscheduledHours = 0;
         for (let i = 0; i < sessionLengths.length && i < daysForTask.length; i++) {
@@ -1713,12 +1716,21 @@ export const generateNewStudyPlan = (
       }
       // Normalize deadline to start of day for comparison
       const deadlineDateStr = deadline.toISOString().split('T')[0];
-      return taskScheduledHours[task.id] < task.estimatedHours && date <= deadlineDateStr;
+      
+      // Calculate how many hours are already scheduled on locked days for this task
+      const lockedDayHours = lockedDayHoursByTask[task.id] || 0;
+      const totalScheduledHours = taskScheduledHours[task.id] + lockedDayHours;
+      
+      return totalScheduledHours < task.estimatedHours && date <= deadlineDateStr;
     });
     
     for (const task of tasksForDay) {
       if (availableHours <= 0) break;
-      const remainingTaskHours = task.estimatedHours - taskScheduledHours[task.id];
+      
+      // Calculate how many hours are already scheduled on locked days for this task
+      const lockedDayHours = lockedDayHoursByTask[task.id] || 0;
+      const remainingTaskHours = task.estimatedHours - (taskScheduledHours[task.id] + lockedDayHours);
+      
       if (remainingTaskHours <= 0) continue;
       
       // Allocate as much as possible for this task
@@ -1768,7 +1780,9 @@ export const generateNewStudyPlan = (
   // Redistribute any unscheduled hours using the improved redistribution logic
   for (const task of tasksSorted) {
     const scheduledHours = taskScheduledHours[task.id] || 0;
-    const unscheduledHours = task.estimatedHours - scheduledHours;
+    const lockedDayHours = lockedDayHoursByTask[task.id] || 0;
+    const totalScheduledHours = scheduledHours + lockedDayHours;
+    const unscheduledHours = task.estimatedHours - totalScheduledHours;
     
     if (unscheduledHours > 0) {
       console.log(`Task "${task.title}" has ${unscheduledHours} unscheduled hours to redistribute (Eisenhower mode)`);
@@ -1846,7 +1860,13 @@ export const generateNewStudyPlan = (
   }
 
   // After all days, add suggestions for any unscheduled hours
-  const suggestions = getUnscheduledMinutesForTasks(tasksSorted, taskScheduledHours, settings);
+  // Include locked day hours in the scheduled hours count for accurate suggestions
+  const totalTaskScheduledHours = { ...taskScheduledHours };
+  Object.keys(lockedDayHoursByTask).forEach(taskId => {
+    totalTaskScheduledHours[taskId] = (totalTaskScheduledHours[taskId] || 0) + lockedDayHoursByTask[taskId];
+  });
+  
+  const suggestions = getUnscheduledMinutesForTasks(tasksSorted, totalTaskScheduledHours, settings);
   return { plans: studyPlans, suggestions };
 };
 
@@ -2962,40 +2982,43 @@ export const redistributeAfterTaskDeletion = (
         sessionsByTask[session.taskId].push(session);
       });
       
-      const combinedSessions: StudySession[] = [];
-      
       // Combine sessions for each task
       Object.entries(sessionsByTask).forEach(([taskId, sessions]) => {
-        if (sessions.length > 1) {
-          // Sort sessions by start time
-          sessions.sort((a, b) => a.startTime.localeCompare(b.startTime));
-          
-          // Combine all sessions into one
-          const firstSession = sessions[0];
-          const lastSession = sessions[sessions.length - 1];
+        if (sessions.length === 1) {
+          // Only one session, keep as is
+          combinedSessions.push(sessions[0]);
+        } else {
+          // Multiple sessions, combine them
           const totalHours = sessions.reduce((sum, session) => sum + session.allocatedHours, 0);
+          const firstSession = sessions[0];
+          
+          // Find the earliest start time and latest end time
+          let earliestStart = firstSession.startTime;
+          let latestEnd = firstSession.endTime;
+          
+          sessions.forEach(session => {
+            if (session.startTime && (!earliestStart || session.startTime < earliestStart)) {
+              earliestStart = session.startTime;
+            }
+            if (session.endTime && (!latestEnd || session.endTime > latestEnd)) {
+              latestEnd = session.endTime;
+            }
+          });
           
           const combinedSession: StudySession = {
             ...firstSession,
-            startTime: firstSession.startTime,
-            endTime: lastSession.endTime,
-            allocatedHours: totalHours,
+            allocatedHours: Math.round(totalHours * 60) / 60,
+            startTime: earliestStart,
+            endTime: latestEnd,
             sessionNumber: 1 // Combined session gets number 1
           };
           
           combinedSessions.push(combinedSession);
-        } else {
-          // Single session, keep as is
-          combinedSessions.push(sessions[0]);
         }
       });
       
-      // Update the plan with combined sessions (keeping skipped sessions separate)
-      const skippedSessions = plan.plannedTasks.filter(session => session.status === 'skipped');
-      plan.plannedTasks = [...combinedSessions, ...skippedSessions];
-      
-      // Calculate totalStudyHours including skipped sessions as "done"
-      plan.totalStudyHours = calculateTotalStudyHours(plan.plannedTasks);
+      plan.plannedTasks = combinedSessions;
+      plan.totalStudyHours = Math.round(combinedSessions.reduce((sum, session) => sum + session.allocatedHours, 0) * 60) / 60;
     }
   };
 
