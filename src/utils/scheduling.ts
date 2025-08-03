@@ -750,7 +750,7 @@ export const generateNewStudyPlan = (
 
       // Calculate remaining hours to distribute (excluding hours already allocated on locked days)
       const lockedHours = calculateLockedHours(task.id, studyPlans);
-      const totalHours = Math.max(0, task.estimatedHours - lockedHours);
+      let totalHours = Math.max(0, task.estimatedHours - lockedHours);
 
       // If all hours are already allocated on locked days, skip redistribution
       if (totalHours <= 0) {
