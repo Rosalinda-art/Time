@@ -477,12 +477,15 @@ export const generateNewStudyPlan = (
     const dailyRemainingHours: { [date: string]: number } = {};
     availableDays.forEach(date => {
       dailyRemainingHours[date] = settings.dailyAvailableHours;
+      // Find existing plan to preserve isLocked property
+      const existingPlan = existingStudyPlans.find(p => p.date === date);
       studyPlans.push({
         id: `plan-${date}`,
         date,
         plannedTasks: [],
         totalStudyHours: 0,
-        availableHours: settings.dailyAvailableHours
+        availableHours: settings.dailyAvailableHours,
+        isLocked: existingPlan?.isLocked || false
       });
     });
     let evenTaskScheduledHours: { [taskId: string]: number } = {};
@@ -957,12 +960,15 @@ export const generateNewStudyPlan = (
       // Create study plans for extended days if needed
       availableDays.forEach(date => {
         if (!studyPlans.find(plan => plan.date === date)) {
+          // Find existing plan to preserve isLocked property
+          const existingPlan = existingStudyPlans.find(p => p.date === date);
           studyPlans.push({
             id: `${date}-study-plan`,
             date,
             plannedTasks: [],
             totalStudyHours: 0,
-            availableHours: settings.dailyAvailableHours
+            availableHours: settings.dailyAvailableHours,
+            isLocked: existingPlan?.isLocked || false
           });
         }
       });
@@ -1158,12 +1164,15 @@ export const generateNewStudyPlan = (
     const dailyRemainingHours: { [date: string]: number } = {};
     availableDays.forEach(date => {
       dailyRemainingHours[date] = settings.dailyAvailableHours;
+      // Find existing plan to preserve isLocked property
+      const existingPlan = existingStudyPlans.find(p => p.date === date);
       studyPlans.push({
         id: `plan-${date}`,
         date,
         plannedTasks: [],
         totalStudyHours: 0,
-        availableHours: settings.dailyAvailableHours
+        availableHours: settings.dailyAvailableHours,
+        isLocked: existingPlan?.isLocked || false
       });
     });
 
@@ -1423,12 +1432,15 @@ export const generateNewStudyPlan = (
   const dailyRemainingHours: { [date: string]: number } = {};
   availableDays.forEach(date => {
     dailyRemainingHours[date] = settings.dailyAvailableHours;
+    // Find existing plan to preserve isLocked property
+    const existingPlan = existingStudyPlans.find(p => p.date === date);
     studyPlans.push({
       id: `plan-${date}`,
       date,
       plannedTasks: [],
       totalStudyHours: 0,
-      availableHours: settings.dailyAvailableHours
+      availableHours: settings.dailyAvailableHours,
+      isLocked: existingPlan?.isLocked || false
     });
   });
 
@@ -2556,12 +2568,15 @@ export const redistributeAfterTaskDeletion = (
   const dailyRemainingHours: { [date: string]: number } = {};
   availableDays.forEach(date => {
     dailyRemainingHours[date] = settings.dailyAvailableHours;
+    // Find existing plan to preserve isLocked property
+    const existingPlan = existingStudyPlans.find(p => p.date === date);
     studyPlans.push({
       id: `plan-${date}`,
       date,
       plannedTasks: [],
       totalStudyHours: 0,
-      availableHours: settings.dailyAvailableHours
+      availableHours: settings.dailyAvailableHours,
+      isLocked: existingPlan?.isLocked || false
     });
   });
 
