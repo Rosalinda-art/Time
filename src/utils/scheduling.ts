@@ -1244,8 +1244,28 @@ export const generateNewStudyPlan = (
 
         if (daysForTask.length === 0) continue;
 
+        // Calculate remaining hours to distribute (excluding hours already allocated on locked days)
+        let lockedHours = 0;
+        studyPlans.forEach(plan => {
+          if (plan.isLocked) {
+            plan.plannedTasks.forEach(session => {
+              if (session.taskId === task.id) {
+                lockedHours += session.allocatedHours;
+              }
+            });
+          }
+        });
+
+        const remainingHours = Math.max(0, task.estimatedHours - lockedHours);
+
+        // If all hours are already allocated on locked days, skip redistribution
+        if (remainingHours <= 0) {
+          console.log(`Balanced mode - Task "${task.title}": All ${task.estimatedHours}h already allocated on locked days`);
+          continue;
+        }
+
         // Use optimized session distribution for even spreading
-        const sessionLengths = optimizeSessionDistribution(task, task.estimatedHours, daysForTask, settings);
+        const sessionLengths = optimizeSessionDistribution(task, remainingHours, daysForTask, settings);
 
         for (let i = 0; i < sessionLengths.length && i < daysForTask.length; i++) {
           let dayIndex = i;
