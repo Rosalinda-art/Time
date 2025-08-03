@@ -1603,15 +1603,7 @@ function App() {
             const updatedPlans = prevPlans.map(plan => {
                 if (plan.date !== planDate) return plan;
                 
-                // Don't allow marking sessions done on locked days
-                if (plan.isLocked) {
-                    console.log(`Cannot mark session done on locked day: ${planDate}`);
-                    setNotificationMessage(
-                        `Cannot mark session as done on ${new Date(planDate).toLocaleDateString()} - this day is locked to protect your schedule.`
-                    );
-                    setTimeout(() => setNotificationMessage(null), 4000);
-                    return plan;
-                }
+                // Locked days allow session completion - this is permitted
                 return {
                     ...plan,
                     plannedTasks: plan.plannedTasks.map(session => {
@@ -1652,15 +1644,7 @@ function App() {
             const updatedPlans = prevPlans.map(plan => {
                 if (plan.date !== planDate) return plan;
                 
-                // Don't allow undoing sessions on locked days
-                if (plan.isLocked) {
-                    console.log(`Cannot undo session on locked day: ${planDate}`);
-                    setNotificationMessage(
-                        `Cannot undo session on ${new Date(planDate).toLocaleDateString()} - this day is locked to protect your schedule.`
-                    );
-                    setTimeout(() => setNotificationMessage(null), 4000);
-                    return plan;
-                }
+                // Locked days allow session completion changes - this is permitted
                 return {
                     ...plan,
                     plannedTasks: plan.plannedTasks.map(session => {
@@ -1962,15 +1946,7 @@ function App() {
         setStudyPlans(prevPlans => {
             return prevPlans.map(plan => {
                 if (plan.date === planDate) {
-                    // Don't allow time updates on locked days
-                    if (plan.isLocked) {
-                        console.log(`Cannot update session time on locked day: ${planDate}`);
-                        setNotificationMessage(
-                            `Cannot edit session times on ${new Date(planDate).toLocaleDateString()} - this day is locked to protect your schedule.`
-                        );
-                        setTimeout(() => setNotificationMessage(null), 4000);
-                        return plan;
-                    }
+                    // Locked days allow time adjustments of existing sessions - this is permitted
                     
                     return {
                         ...plan,

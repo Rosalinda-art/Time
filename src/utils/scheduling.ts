@@ -2626,7 +2626,7 @@ export const moveIndividualSession = (
   const updatedPlans = [...studyPlans];
   const today = getLocalDateString();
   
-  // Check if the original plan date is locked
+  // Check if the original plan date is locked (moving sessions is a structural change)
   const originalPlan = updatedPlans.find(p => p.date === originalPlanDate);
   if (originalPlan?.isLocked) {
     console.log(`Cannot move session from locked day: ${originalPlanDate}`);
@@ -2634,7 +2634,7 @@ export const moveIndividualSession = (
       success: false, 
       newTime: null, 
       newDate: null,
-      reason: `Cannot move session from ${new Date(originalPlanDate).toLocaleDateString()} - this day is locked to protect your schedule.`
+      reason: `Cannot move session from ${new Date(originalPlanDate).toLocaleDateString()} - this day is locked to prevent structural changes.`
     };
   }
   
