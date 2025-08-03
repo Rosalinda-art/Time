@@ -2629,14 +2629,35 @@ export const moveIndividualSession = (
   // Check if the original plan date is locked
   const originalPlan = updatedPlans.find(p => p.date === originalPlanDate);
   if (originalPlan?.isLocked) {
-    return { success: false, newTime: null, newDate: null };
+    console.log(`Cannot move session from locked day: ${originalPlanDate}`);
+    return { 
+      success: false, 
+      newTime: null, 
+      newDate: null,
+      reason: `Cannot move session from ${new Date(originalPlanDate).toLocaleDateString()} - this day is locked to protect your schedule.`
+    };
   }
   
-  // Try to move to today
-  const todayPlan = updatedPlans.find(p => p.date === today);
-  if (todayPlan && !todayPlan.isLocked && settings.workDays.includes(new Date().getDay())) {
+  // Try to move to available days (starting with today, but excluding locked days)
+  for (let dayOffset = 0; dayOffset <= 7; dayOffset++) {
+    const targetDate = new Date(today);
+    targetDate.setDate(targetDate.getDate() + dayOffset);
+    const targetDateString = targetDate.toISOString().split('T')[0];
+    
+    // Skip non-work days
+    if (!settings.workDays.includes(targetDate.getDay())) {
+      continue;
+    }
+    
+    // Skip locked days
+    const targetPlan = updatedPlans.find(p => p.date === targetDateString);
+    if (targetPlan?.isLocked) {
+      console.log(`Skipping locked day: ${targetDateString}`);
+      continue;
+    }
+    
     const availableSlots = getDailyAvailableTimeSlots(
-      new Date(today),
+      targetDate,
       settings.dailyAvailableHours,
       fixedCommitments,
       settings.workDays,
@@ -2661,13 +2682,27 @@ export const moveIndividualSession = (
       const endMinute = endTime.getMinutes();
       newSession.endTime = `${endHour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
       
-      todayPlan.plannedTasks.push(newSession);
+      // Find or create target plan
+      let finalTargetPlan = targetPlan;
+      if (!finalTargetPlan) {
+        finalTargetPlan = {
+          id: `plan-${targetDateString}`,
+          date: targetDateString,
+          plannedTasks: [],
+          totalStudyHours: 0,
+          availableHours: settings.dailyAvailableHours,
+          isLocked: false
+        };
+        updatedPlans.push(finalTargetPlan);
+      }
+      
+      finalTargetPlan.plannedTasks.push(newSession);
       
       return { 
         updatedPlans, 
         success: true, 
         newTime: newSession.startTime, 
-        newDate: today 
+        newDate: targetDateString 
       };
     }
   }
