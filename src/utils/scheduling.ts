@@ -1554,7 +1554,21 @@ export const generateNewStudyPlan = (
     });
     for (const task of tasksForDay) {
       if (availableHours <= 0) break;
-      const remainingTaskHours = task.estimatedHours - taskScheduledHours[task.id];
+
+      // Calculate locked hours for this task
+      let lockedHours = 0;
+      studyPlans.forEach(plan => {
+        if (plan.isLocked) {
+          plan.plannedTasks.forEach(session => {
+            if (session.taskId === task.id) {
+              lockedHours += session.allocatedHours;
+            }
+          });
+        }
+      });
+
+      const adjustedEstimatedHours = Math.max(0, task.estimatedHours - lockedHours);
+      const remainingTaskHours = adjustedEstimatedHours - taskScheduledHours[task.id];
       if (remainingTaskHours <= 0) continue;
       // Allocate as much as possible for this task
       // For one-time tasks, schedule all remaining hours at once if possible
