@@ -30,12 +30,16 @@ export const validateDayLock = (
   settings: UserSettings,
   fixedCommitments: FixedCommitment[]
 ): LockDayValidationResult => {
+  console.log('validateDayLock called for date:', date);
   const warnings: string[] = [];
   const blockers: string[] = [];
   const affectedSessions: StudySession[] = [];
-  
+
   const targetPlan = studyPlans.find(p => p.date === date);
+  console.log('targetPlan found:', targetPlan);
+
   if (!targetPlan) {
+    console.log('No plan found for date, allowing lock');
     return {
       canLock: true,
       warnings: [],
