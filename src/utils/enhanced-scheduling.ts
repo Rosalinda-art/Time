@@ -505,13 +505,14 @@ export class EnhancedRedistributionEngine {
     options: {
       partialHours?: number;
       reason?: 'user_choice' | 'conflict' | 'overload';
+      allowLockedDaySkip?: boolean; // New option to allow skipping on locked days
     } = {}
   ): boolean {
     const plan = studyPlans.find(p => p.date === planDate);
     if (!plan) return false;
-    
-    // Don't allow skipping sessions on locked days
-    if (plan.isLocked) return false;
+
+    // Don't allow skipping sessions on locked days unless explicitly allowed
+    if (plan.isLocked && !options.allowLockedDaySkip) return false;
     
     const session = plan.plannedTasks.find(
       s => s.taskId === taskId && s.sessionNumber === sessionNumber
