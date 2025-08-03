@@ -1447,7 +1447,8 @@ export const generateNewStudyPlan = (
           
           const date = daysForTask[dayIndex];
           const dayPlan = studyPlans.find(p => p.date === date)!;
-          
+          const availableHours = dailyRemainingHours[date];
+
           // Skip locked days during initial distribution
           if (dayPlan.isLocked) {
             // Track unscheduled hours for redistribution
@@ -1457,8 +1458,6 @@ export const generateNewStudyPlan = (
             }
             continue;
           }
-          
-          const availableHours = dailyRemainingHours[date];
           const thisSessionLength = Math.min(sessionLengths[i], availableHours);
 
           if (thisSessionLength > 0) {
