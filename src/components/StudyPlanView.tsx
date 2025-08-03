@@ -3,6 +3,8 @@ import { Calendar, Clock, BookOpen, TrendingUp, AlertTriangle, CheckCircle, Ligh
 import { StudyPlan, Task, StudySession, FixedCommitment, UserSettings } from '../types'; // Added FixedCommitment to imports
 import { formatTime, generateSmartSuggestions, getLocalDateString, checkSessionStatus, getDailyAvailableTimeSlots, findNextAvailableStartTime, moveIndividualSession, redistributeMissedSessionsEnhanced, skipSessionEnhanced, validateTimeSlot } from '../utils/scheduling';
 import { RedistributionOptions } from '../types';
+import { LockDayManager, LockDayButton } from './LockDayManager';
+import { validateDayLock } from '../utils/lock-day-management';
 
 interface StudyPlanViewProps {
   studyPlans: StudyPlan[];
