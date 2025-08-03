@@ -573,17 +573,38 @@ export const generateNewStudyPlan = (
         // Calculate optimal distribution for remaining hours
         const optimalSessions = optimizeSessionDistribution(task, remainingUnscheduledHours, availableDaysForRedistribution, settings);
         
-        // Distribute optimal sessions to available days
+        // Distribute optimal sessions to available days, preferring to extend existing sessions
         for (let i = 0; i < optimalSessions.length && i < availableDaysForRedistribution.length; i++) {
           const date = availableDaysForRedistribution[i];
           const dayPlan = studyPlans.find(p => p.date === date)!;
           const availableHours = dailyRemainingHours[date];
           const sessionLength = Math.min(optimalSessions[i], availableHours);
-          
+
           if (sessionLength >= minSessionLength) {
             const roundedSessionLength = Math.round(sessionLength * 60) / 60;
 
-            // Find available time slot for this session to prevent overlaps
+            // Check if this day already has a session for this task that can be extended
+            const existingTaskSession = dayPlan.plannedTasks.find(s => s.taskId === task.id && s.status !== 'skipped');
+
+            if (existingTaskSession && existingTaskSession.endTime) {
+              // Try to extend the existing session instead of creating a new one
+              const extendedHours = existingTaskSession.allocatedHours + roundedSessionLength;
+              const maxSessionLength = Math.min(4, settings.dailyAvailableHours); // Cap at 4 hours
+
+              if (extendedHours <= maxSessionLength) {
+                // Extend the existing session
+                existingTaskSession.allocatedHours = extendedHours;
+                // Update end time (will be recalculated later in time assignment)
+                dayPlan.totalStudyHours = Math.round((dayPlan.totalStudyHours + roundedSessionLength) * 60) / 60;
+                dailyRemainingHours[date] = Math.round((dailyRemainingHours[date] - roundedSessionLength) * 60) / 60;
+                distributedThisRound = Math.round((distributedThisRound + roundedSessionLength) * 60) / 60;
+
+                console.log(`Extended existing session for "${task.title}" on ${date} by ${roundedSessionLength}h (total: ${extendedHours}h)`);
+                continue;
+              }
+            }
+
+            // If no existing session to extend, create a new one
             const commitmentsForDay = fixedCommitments.filter(commitment => {
               if (commitment.recurring) {
                 return commitment.daysOfWeek.includes(new Date(date).getDay());
@@ -617,6 +638,8 @@ export const generateNewStudyPlan = (
               dayPlan.totalStudyHours = Math.round((dayPlan.totalStudyHours + roundedSessionLength) * 60) / 60;
               dailyRemainingHours[date] = Math.round((dailyRemainingHours[date] - roundedSessionLength) * 60) / 60;
               distributedThisRound = Math.round((distributedThisRound + roundedSessionLength) * 60) / 60;
+
+              console.log(`Created new session for "${task.title}" on ${date}: ${roundedSessionLength}h`);
             } else {
               // No available time slot found, skip this distribution
               console.log(`No available time slot found for ${roundedSessionLength} hours on ${date}`);
