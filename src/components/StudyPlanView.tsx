@@ -3,8 +3,7 @@ import { Calendar, Clock, BookOpen, TrendingUp, AlertTriangle, CheckCircle, Ligh
 import { StudyPlan, Task, StudySession, FixedCommitment, UserSettings } from '../types'; // Added FixedCommitment to imports
 import { formatTime, generateSmartSuggestions, getLocalDateString, checkSessionStatus, getDailyAvailableTimeSlots, findNextAvailableStartTime, moveIndividualSession, redistributeMissedSessionsEnhanced, skipSessionEnhanced, validateTimeSlot } from '../utils/scheduling';
 import { RedistributionOptions } from '../types';
-import { LockDayManager, LockDayButton } from './LockDayManager';
-import { validateDayLock } from '../utils/lock-day-management';
+
 
 interface StudyPlanViewProps {
   studyPlans: StudyPlan[];
@@ -802,7 +801,7 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
             </p>
             <div className="bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900 dark:to-pink-900 rounded-lg p-4">
               <p className="text-sm text-gray-700 dark:text-gray-200">
-                <span className="font-medium">Pro tip:</span> Use this time to plan your next study session or just enjoy your well-deserved break! ✨
+                <span className="font-medium">Pro tip:</span> Use this time to plan your next study session or just enjoy your well-deserved break! ���
               </p>
             </div>
           </div>
