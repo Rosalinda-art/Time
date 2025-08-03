@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Calendar, CheckSquare, Clock, Settings as SettingsIcon, BarChart3, CalendarDays, Lightbulb, Edit, Trash2, Menu, X, HelpCircle, Trophy, User } from 'lucide-react';
 import { Task, StudyPlan, UserSettings, FixedCommitment, StudySession, TimerState } from './types';
 import { GamificationData, Achievement, DailyChallenge, MotivationalMessage } from './types-gamification';
-import { generateNewStudyPlan, getUnscheduledMinutesForTasks, getLocalDateString, redistributeAfterTaskDeletion, redistributeMissedSessionsWithFeedback, checkCommitmentConflicts, redistributeMissedSessionsEnhanced } from './utils/scheduling';
+import { generateNewStudyPlan, getUnscheduledMinutesForTasks, getLocalDateString, redistributeMissedSessionsWithFeedback, checkCommitmentConflicts } from './utils/scheduling';
 import { getAccurateUnscheduledTasks, shouldShowNotifications, getNotificationPriority } from './utils/enhanced-notifications';
 import { enhancedEstimationTracker } from './utils/enhanced-estimation-tracker';
 import { RedistributionOptions } from './types';
@@ -1290,10 +1290,10 @@ function App() {
         }
         setLastPlanStaleReason("task");
 
-        // Use aggressive redistribution after task deletion with the cleaned plans
-        const newPlans = redistributeAfterTaskDeletion(updatedTasks, settings, fixedCommitments, cleanedPlans);
+        // Generate new study plan after task deletion
+        const newPlans = generateNewStudyPlan(updatedTasks, settings, fixedCommitments, cleanedPlans);
         setStudyPlans(newPlans);
-        setNotificationMessage('Study plan redistributed aggressively after deleting task.');
+        setNotificationMessage('Study plan regenerated after deleting task.');
         setTimeout(() => setNotificationMessage(null), 3000);
     };
 

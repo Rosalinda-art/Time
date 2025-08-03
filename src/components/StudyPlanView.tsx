@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Play, CheckCircle2, SkipForward, RotateCcw, AlertTriangle, Lock, Unlock, Info, Lightbulb, Zap, Target, TrendingUp, X } from 'lucide-react';
+import { Calendar, Clock, Play, CheckCircle2, SkipForward, RotateCcw, AlertTriangle, Lock, Unlock, Info, Lightbulb, Zap, Target, TrendingUp, X, Edit } from 'lucide-react';
 import { StudyPlan, StudySession, Task, UserSettings, FixedCommitment } from '../types';
 import { 
   formatTime, 
@@ -13,6 +13,7 @@ import {
   getLockedHoursForTask
 } from '../utils/scheduling';
 import SuggestionsPanel from './SuggestionsPanel';
+import SessionTimeEditModal from './SessionTimeEditModal';
 
 interface StudyPlanViewProps {
   studyPlans: StudyPlan[];
@@ -24,6 +25,11 @@ interface StudyPlanViewProps {
   onUpdateStudyPlans: (plans: StudyPlan[]) => void;
   onSkipMissedSession: (planDate: string, sessionNumber: number, taskId: string) => void;
   onRedistributeMissedSessions: () => void;
+  onUpdateSessionTime?: (planDate: string, taskId: string, sessionNumber: number, newStartTime: string, newEndTime: string) => void;
+  onUndoSessionDone?: (planDate: string, taskId: string, sessionNumber: number) => void;
+  onAddFixedCommitment?: (commitment: Omit<FixedCommitment, 'id' | 'createdAt'>) => void;
+  onEnhancedRedistribution?: () => void;
+  onToggleDayLock?: (date: string, isLocked: boolean) => void;
 }
 
 const StudyPlanView: React.FC<StudyPlanViewProps> = ({
@@ -35,11 +41,18 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({
   onGenerateStudyPlan,
   onUpdateStudyPlans,
   onSkipMissedSession,
-  onRedistributeMissedSessions
+  onRedistributeMissedSessions,
+  onUpdateSessionTime,
+  onUndoSessionDone,
+  onAddFixedCommitment,
+  onEnhancedRedistribution,
+  onToggleDayLock
 }) => {
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [redistributionInProgress, setRedistributionInProgress] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingSession, setEditingSession] = useState<{ session: StudySession; planDate: string } | null>(null);
 
   const today = new Date().toISOString().split('T')[0];
   const todaysPlan = studyPlans.find(plan => plan.date === today);
@@ -62,25 +75,31 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({
   const handleLockDay = (date: string) => {
     const plan = studyPlans.find(p => p.date === date);
     
-    if (plan?.isLocked) {
-      // Unlock the day
-      const success = unlockDay(date, studyPlans, settings);
-      if (success) {
-        onUpdateStudyPlans([...studyPlans]); // Trigger re-render
-        setNotificationMessage(`Day ${date} unlocked. You can now modify sessions on this day.`);
-      }
+    if (onToggleDayLock) {
+      // Use the prop function if available
+      onToggleDayLock(date, !plan?.isLocked);
     } else {
-      // Try to lock the day
-      const lockCheck = canLockDay(date, studyPlans);
-      
-      if (lockCheck.canLock) {
-        const success = lockDay(date, studyPlans, settings);
+      // Fallback to local implementation
+      if (plan?.isLocked) {
+        // Unlock the day
+        const success = unlockDay(date, studyPlans, settings);
         if (success) {
           onUpdateStudyPlans([...studyPlans]); // Trigger re-render
-          setNotificationMessage(`Day ${date} locked. Sessions on this day are now protected from changes.`);
+          setNotificationMessage(`Day ${date} unlocked. You can now modify sessions on this day.`);
         }
       } else {
-        setNotificationMessage(`Cannot lock day ${date}: ${lockCheck.reason}`);
+        // Try to lock the day
+        const lockCheck = canLockDay(date, studyPlans);
+        
+        if (lockCheck.canLock) {
+          const success = lockDay(date, studyPlans, settings);
+          if (success) {
+            onUpdateStudyPlans([...studyPlans]); // Trigger re-render
+            setNotificationMessage(`Day ${date} locked. Sessions on this day are now protected from changes.`);
+          }
+        } else {
+          setNotificationMessage(`Cannot lock day ${date}: ${lockCheck.reason}`);
+        }
       }
     }
   };
@@ -117,6 +136,32 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({
     const updatedPlans = combineSessionsOnSameDay(studyPlans, date);
     onUpdateStudyPlans(updatedPlans);
     setNotificationMessage('Sessions combined successfully!');
+  };
+
+  const handleEditSessionTime = (session: StudySession, planDate: string) => {
+    setEditingSession({ session, planDate });
+    setEditModalOpen(true);
+  };
+
+  const handleSaveSessionTime = (newStartTime: string) => {
+    if (editingSession && onUpdateSessionTime) {
+      // Calculate new end time based on session duration
+      const startTimeMinutes = parseInt(newStartTime.split(':')[0]) * 60 + parseInt(newStartTime.split(':')[1]);
+      const durationMinutes = editingSession.session.allocatedHours * 60;
+      const endTimeMinutes = startTimeMinutes + durationMinutes;
+      const newEndTime = `${Math.floor(endTimeMinutes / 60).toString().padStart(2, '0')}:${(endTimeMinutes % 60).toString().padStart(2, '0')}`;
+      
+      onUpdateSessionTime(
+        editingSession.planDate,
+        editingSession.session.taskId,
+        editingSession.session.sessionNumber || 0,
+        newStartTime,
+        newEndTime
+      );
+      setNotificationMessage('Session start time updated successfully!');
+    }
+    setEditModalOpen(false);
+    setEditingSession(null);
   };
 
   useEffect(() => {
@@ -304,11 +349,23 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
-                      {isCompleted && (
+                      {!isCompleted && !isMissed && !todaysPlan.isLocked && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            // Handle undo completion
+                            handleEditSessionTime(session, todaysPlan.date);
+                          }}
+                          className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-gray-700"
+                          title="Edit start time"
+                        >
+                          <Edit size={14} />
+                        </button>
+                      )}
+                      {isCompleted && onUndoSessionDone && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onUndoSessionDone(todaysPlan.date, session.taskId, session.sessionNumber || 0);
                           }}
                           className="px-3 py-1 text-xs bg-orange-100 text-orange-800 rounded-lg hover:bg-orange-200 transition-colors dark:bg-orange-900 dark:text-orange-200 dark:hover:bg-orange-800"
                         >
@@ -401,8 +458,22 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({
                             </div>
                           </div>
                         </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          {formatTime(session.allocatedHours)}
+                        <div className="flex items-center space-x-2">
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {formatTime(session.allocatedHours)}
+                          </div>
+                          {!plan.isLocked && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditSessionTime(session, plan.date);
+                              }}
+                              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-gray-700"
+                              title="Edit start time"
+                            >
+                              <Edit size={12} />
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -439,6 +510,20 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({
             Generate Study Plan
           </button>
         </div>
+      )}
+
+      {/* Session Time Edit Modal */}
+      {editingSession && (
+        <SessionTimeEditModal
+          isOpen={editModalOpen}
+          onClose={() => {
+            setEditModalOpen(false);
+            setEditingSession(null);
+          }}
+          session={editingSession.session}
+          planDate={editingSession.planDate}
+          onSave={handleSaveSessionTime}
+        />
       )}
     </div>
   );
