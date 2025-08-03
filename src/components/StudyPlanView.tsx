@@ -273,11 +273,11 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
   };
 
   // Lock day handler
-  const handleToggleDayLock = (date: string, currentLockState: boolean) => {
+  const handleToggleDayLock = (date: string, newLockState: boolean) => {
     if (onToggleDayLock) {
-      onToggleDayLock(date, !currentLockState);
+      onToggleDayLock(date, newLockState);
       setNotificationMessage(
-        !currentLockState 
+        newLockState
           ? `Day locked! Sessions on ${new Date(date).toLocaleDateString()} are now protected from changes.`
           : `Day unlocked! Sessions on ${new Date(date).toLocaleDateString()} can now be modified.`
       );
