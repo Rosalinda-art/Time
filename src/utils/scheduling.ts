@@ -1267,6 +1267,11 @@ export const generateNewStudyPlan = (
           
           // Skip locked days during initial distribution
           if (dayPlan.isLocked) {
+            // Track unscheduled hours for redistribution
+            const sessionHours = Math.min(sessionLengths[i], availableHours);
+            if (sessionHours > 0) {
+              console.log(`Balanced mode: Skipping ${sessionHours}h for "${task.title}" on locked day ${date}`);
+            }
             continue;
           }
           
