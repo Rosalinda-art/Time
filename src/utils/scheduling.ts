@@ -406,6 +406,8 @@ export const generateNewStudyPlan = (
 ): { plans: StudyPlan[]; suggestions: Array<{ taskTitle: string; unscheduledMinutes: number }> } => {
   // Collect missed sessions from existing plans for redistribution
   const missedSessionsToRedistribute: Array<{session: StudySession, planDate: string, task: Task}> = [];
+  const missedSessionsByTask: { [taskId: string]: StudySession[] } = {};
+
   if (existingStudyPlans.length > 0) {
     existingStudyPlans.forEach(plan => {
       plan.plannedTasks.forEach(session => {
@@ -414,6 +416,12 @@ export const generateNewStudyPlan = (
           const task = tasks.find(t => t.id === session.taskId);
           if (task && task.status === 'pending') {
             missedSessionsToRedistribute.push({session, planDate: plan.date, task});
+
+            // Group missed sessions by task for better redistribution logic
+            if (!missedSessionsByTask[task.id]) {
+              missedSessionsByTask[task.id] = [];
+            }
+            missedSessionsByTask[task.id].push(session);
           }
         }
       });
