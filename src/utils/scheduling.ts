@@ -503,9 +503,10 @@ export const generateNewStudyPlan = (
       while (remainingUnscheduledHours > 0 && redistributionRound < maxRedistributionRounds) {
         redistributionRound++;
         
-        // Find all available days within the task's deadline that have remaining capacity
+        // Find all available days within the task's deadline that have remaining capacity and are not locked
         const availableDaysForRedistribution = daysForTask.filter(date => {
-          return dailyRemainingHours[date] > 0;
+          const dayPlan = studyPlans.find(p => p.date === date);
+          return dailyRemainingHours[date] > 0 && !dayPlan?.isLocked;
         });
         
         if (availableDaysForRedistribution.length === 0) {
@@ -724,6 +725,13 @@ export const generateNewStudyPlan = (
       for (let i = 0; i < sessionLengths.length && i < daysForTask.length; i++) {
         const date = daysForTask[i];
         let dayPlan = studyPlans.find(p => p.date === date)!;
+        
+        // Skip locked days during initial distribution
+        if (dayPlan.isLocked) {
+          unscheduledHours += sessionLengths[i];
+          continue;
+        }
+        
         let availableHours = dailyRemainingHours[date];
         const thisSessionLength = Math.min(sessionLengths[i], availableHours);
         
@@ -1239,6 +1247,12 @@ export const generateNewStudyPlan = (
           
           const date = daysForTask[dayIndex];
           const dayPlan = studyPlans.find(p => p.date === date)!;
+          
+          // Skip locked days during initial distribution
+          if (dayPlan.isLocked) {
+            continue;
+          }
+          
           const availableHours = dailyRemainingHours[date];
           const thisSessionLength = Math.min(sessionLengths[i], availableHours);
 
@@ -2606,7 +2620,8 @@ export const redistributeAfterTaskDeletion = (
       redistributionRound++;
       
       const availableDaysForRedistribution = daysForTask.filter(date => {
-        return dailyRemainingHours[date] > 0;
+        const dayPlan = studyPlans.find(p => p.date === date);
+        return dailyRemainingHours[date] > 0 && !dayPlan?.isLocked;
       });
       
       if (availableDaysForRedistribution.length === 0) {
@@ -2727,6 +2742,13 @@ export const redistributeAfterTaskDeletion = (
     for (let i = 0; i < sessionLengths.length && i < daysForTask.length; i++) {
       const date = daysForTask[i];
       let dayPlan = studyPlans.find(p => p.date === date)!;
+      
+      // Skip locked days during initial distribution
+      if (dayPlan.isLocked) {
+        unscheduledHours += sessionLengths[i];
+        continue;
+      }
+      
       let availableHours = dailyRemainingHours[date];
       const thisSessionLength = Math.min(sessionLengths[i], availableHours);
       
