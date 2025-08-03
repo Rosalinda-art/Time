@@ -1006,11 +1006,11 @@ export const generateNewStudyPlan = (
     
     // REDISTRIBUTE MISSED SESSIONS
     // After normal scheduling is complete, try to redistribute missed sessions
-    if (Object.keys(missedSessionHoursByTask).length > 0) {
+    if (Object.keys(missedSessionsByTask).length > 0) {
       console.log('Attempting to redistribute missed sessions...');
-      
+
       // Sort tasks with missed sessions by importance and deadline
-      const tasksWithMissedSessions = Object.keys(missedSessionHoursByTask)
+      const tasksWithMissedSessions = Object.keys(missedSessionsByTask)
         .map(taskId => tasksEven.find(t => t.id === taskId))
         .filter(task => task !== undefined)
         .sort((a, b) => {
@@ -1018,22 +1018,21 @@ export const generateNewStudyPlan = (
           if (a.importance !== b.importance) return a.importance ? -1 : 1;
           return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
         });
-      
+
       for (const task of tasksWithMissedSessions) {
         if (!task) continue;
 
-        const missedHours = missedSessionHoursByTask[task.id];
-        if (missedHours <= 0) continue;
+        const missedSessions = missedSessionsByTask[task.id];
+        if (!missedSessions || missedSessions.length === 0) continue;
 
-        // Check if this task has sessions on locked days - if so, don't redistribute missed sessions
-        // as the locked sessions represent the user's fixed commitment to those time slots
+        // Check if this task has sessions on locked days
         const lockedHours = calculateLockedHours(task.id, studyPlans);
 
+        // Allow redistribution even if there are locked sessions, but prioritize them
         if (lockedHours > 0) {
-          console.log(`Skipping missed session redistribution for "${task.title}" - has ${lockedHours}h on locked days`);
-          continue;
+          console.log(`Task "${task.title}" has ${lockedHours}h on locked days - redistributing ${missedSessions.length} missed sessions`);
         }
-        
+
         // Get deadline for this task
         const deadline = new Date(task.deadline);
         if (settings.bufferDays > 0) {
@@ -1041,17 +1040,48 @@ export const generateNewStudyPlan = (
         }
         const deadlineDateStr = deadline.toISOString().split('T')[0];
         const daysForTask = availableDays.filter(d => d <= deadlineDateStr);
-        
-        // Try to redistribute missed session hours
-        const finalUnscheduledHours = redistributeUnscheduledHours(task, missedHours, daysForTask);
-        
-        if (finalUnscheduledHours < missedHours) {
-          console.log(`Successfully redistributed ${missedHours - finalUnscheduledHours} hours for task "${task.title}"`);
-        } else {
-          console.log(`Could not redistribute ${missedHours} hours for task "${task.title}"`);
+
+        // Redistribute each missed session individually to maintain session structure
+        let redistributedCount = 0;
+        for (const missedSession of missedSessions) {
+          const sessionHours = missedSession.allocatedHours;
+
+          // Try to find a day with existing sessions for this task first (to consolidate)
+          let bestDate = null;
+          let bestAvailableHours = 0;
+
+          for (const date of daysForTask) {
+            const dayPlan = studyPlans.find(p => p.date === date);
+            if (!dayPlan || dayPlan.isLocked) continue;
+
+            const availableHours = dailyRemainingHours[date];
+            if (availableHours >= sessionHours) {
+              const hasExistingSession = dayPlan.plannedTasks.some(s => s.taskId === task.id);
+
+              if (hasExistingSession && availableHours > bestAvailableHours) {
+                bestDate = date;
+                bestAvailableHours = availableHours;
+              } else if (!bestDate && !hasExistingSession) {
+                bestDate = date;
+                bestAvailableHours = availableHours;
+              }
+            }
+          }
+
+          if (bestDate) {
+            // Add the missed session to the best available day
+            const finalUnscheduledHours = redistributeUnscheduledHours(task, sessionHours, [bestDate]);
+
+            if (finalUnscheduledHours < sessionHours) {
+              redistributedCount++;
+              console.log(`Redistributed missed session for "${task.title}": ${sessionHours}h to ${bestDate}`);
+            }
+          }
         }
+
+        console.log(`Successfully redistributed ${redistributedCount}/${missedSessions.length} missed sessions for task "${task.title}"`);
       }
-      
+
       // Combine sessions again after missed session redistribution
       combineSessionsOnSameDay(studyPlans);
     }
