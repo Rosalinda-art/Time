@@ -1211,8 +1211,8 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
                           Locked
                         </span>
                       )}
-                      <button 
-                        onClick={() => handleToggleDayLock(plan.date, plan.isLocked || false)}
+                      <button
+                        onClick={() => handleToggleDayLock(plan.date, !(plan.isLocked || false))}
                         className={`p-1 rounded transition-colors duration-200 ${
                           plan.isLocked 
                             ? 'bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:hover:bg-red-800' 
