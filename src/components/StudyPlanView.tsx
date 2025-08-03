@@ -981,10 +981,19 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
             
                           return (
                 <div
-                  key={`today-${session.taskId}-${session.sessionNumber || 0}-${session.startTime || ''}-${todaysPlan.date}`}
-                  className={`p-4 border-l-4 rounded-lg study-session-item ${!isDone && !isCompleted && sessionStatus !== 'missed' ? 'cursor-pointer hover:shadow-md' : 'cursor-default'} transition-all duration-200 flex items-center justify-between ${currentStatusColors.bg} ${importanceStyle.ring}`}
-                  onClick={() => !isDone && !isCompleted && sessionStatus !== 'missed' && todaysPlan && onSelectTask(task, { allocatedHours: session.allocatedHours, planDate: todaysPlan.date, sessionNumber: session.sessionNumber })}
-                >
+  key={`today-${session.taskId}-${session.sessionNumber || 0}-${session.startTime || ''}-${todaysPlan.date}`}
+  className={`p-4 border-l-4 rounded-lg study-session-item ${
+    !isDone && !isCompleted && sessionStatus !== 'missed' && 
+    !(editingSessionTime && editingSessionTime.planDate === todaysPlan.date && editingSessionTime.taskId === session.taskId && editingSessionTime.sessionNumber === session.sessionNumber)
+    ? 'cursor-pointer hover:shadow-md' : 'cursor-default'
+  } transition-all duration-200 flex items-center justify-between ${currentStatusColors.bg} ${importanceStyle.ring}`}
+  onClick={() => {
+    const isEditing = editingSessionTime && editingSessionTime.planDate === todaysPlan.date && editingSessionTime.taskId === session.taskId && editingSessionTime.sessionNumber === session.sessionNumber;
+    if (!isDone && !isCompleted && sessionStatus !== 'missed' && !isEditing && todaysPlan) {
+      onSelectTask(task, { allocatedHours: session.allocatedHours, planDate: todaysPlan.date, sessionNumber: session.sessionNumber });
+    }
+  }}
+>
                 <div className={`flex-1 ${isDone || isCompleted ? 'pointer-events-none' : ''}`}>
                   <div className="flex items-center space-x-2 mb-2">
                     {icon && <span className="mr-2">{icon}</span>}
@@ -1008,64 +1017,76 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
                     <div className="flex items-center space-x-1">
                       <Clock size={16} />
                       {editingSessionTime && 
-                       editingSessionTime.planDate === todaysPlan.date && 
-                       editingSessionTime.taskId === session.taskId && 
-                       editingSessionTime.sessionNumber === session.sessionNumber ? (
-                        <div className="flex items-center space-x-2">
-                          <input
-                            type="time"
-                            value={editingSessionTime.newStartTime}
-                            onChange={(e) => setEditingSessionTime({
-                              ...editingSessionTime,
-                              newStartTime: e.target.value
-                            })}
-                            className="px-2 py-1 border rounded text-xs dark:bg-gray-700 dark:border-gray-600"
-                          />
-                          <span>-</span>
-                          <input
-                            type="time"
-                            value={editingSessionTime.newEndTime}
-                            onChange={(e) => setEditingSessionTime({
-                              ...editingSessionTime,
-                              newEndTime: e.target.value
-                            })}
-                            className="px-2 py-1 border rounded text-xs dark:bg-gray-700 dark:border-gray-600"
-                          />
-                          <button
-                            onClick={handleTimeEditSave}
-                            className="p-1 text-green-600 hover:text-green-800 dark:text-green-400"
-                            title="Save time changes"
-                          >
-                            <Save size={14} />
-                          </button>
-                          <button
-                            onClick={handleTimeEditCancel}
-                            className="p-1 text-gray-600 hover:text-gray-800 dark:text-gray-400"
-                            title="Cancel editing"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center space-x-2">
-                          <span>{session.startTime} - {session.endTime}</span>
-                          {todaysPlan.isLocked && !isDone && !isCompleted && sessionStatus !== 'missed' && (
-                            <button
-                              onClick={() => handleStartTimeEdit(
-                                todaysPlan.date, 
-                                session.taskId, 
-                                session.sessionNumber || 0, 
-                                session.startTime, 
-                                session.endTime
-                              )}
-                              className="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 opacity-60 hover:opacity-100"
-                              title="Edit session time (locked day only)"
-                            >
-                              <Edit size={12} />
-                            </button>
-                          )}
-                        </div>
-                      )}
+ editingSessionTime.planDate === todaysPlan.date && 
+ editingSessionTime.taskId === session.taskId && 
+ editingSessionTime.sessionNumber === session.sessionNumber ? (
+  <div className="flex items-center space-x-3 bg-white dark:bg-gray-700 p-2 rounded border-2 border-blue-300 dark:border-blue-600" onClick={(e) => e.stopPropagation()}>
+    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Start:</span>
+    <input
+      type="time"
+      value={editingSessionTime.newStartTime}
+      onChange={(e) => {
+        const startTime = e.target.value;
+        const [hours, minutes] = startTime.split(':').map(Number);
+        const startDate = new Date();
+        startDate.setHours(hours, minutes, 0, 0);
+        const endDate = new Date(startDate.getTime() + session.allocatedHours * 60 * 60 * 1000);
+        const endTime = endDate.getHours().toString().padStart(2, '0') + ':' + endDate.getMinutes().toString().padStart(2, '0');
+        
+        setEditingSessionTime({
+          ...editingSessionTime,
+          newStartTime: startTime,
+          newEndTime: endTime
+        });
+      }}
+      className="px-3 py-2 border-2 border-gray-300 rounded-lg text-sm focus:border-blue-500 focus:outline-none dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+      autoFocus
+    />
+    <span className="text-sm text-gray-500 dark:text-gray-400">→ {editingSessionTime.newEndTime}</span>
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        handleTimeEditSave();
+      }}
+      className="px-3 py-1 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm transition-colors"
+      title="Save time changes"
+    >
+      Save
+    </button>
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        handleTimeEditCancel();
+      }}
+      className="px-3 py-1 bg-gray-500 hover:bg-gray-600 text-white rounded-lg text-sm transition-colors"
+      title="Cancel editing"
+    >
+      Cancel
+    </button>
+  </div>
+) : (
+  <div className="flex items-center space-x-2">
+    <span>{session.startTime} - {session.endTime}</span>
+    {todaysPlan.isLocked && !isDone && !isCompleted && sessionStatus !== 'missed' && (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          handleStartTimeEdit(
+            todaysPlan.date, 
+            session.taskId, 
+            session.sessionNumber || 0, 
+            session.startTime, 
+            session.endTime
+          );
+        }}
+        className="px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-600 hover:text-blue-800 dark:bg-blue-900 dark:hover:bg-blue-800 dark:text-blue-400 rounded transition-colors"
+        title="Edit start time"
+      >
+        <Edit size={14} />
+      </button>
+    )}
+  </div>
+)}
                     </div>
                     <div className="flex items-center space-x-1">
                       <TrendingUp size={16} />
@@ -1222,13 +1243,17 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
 
                       return (
                         <div
-                          key={`upcoming-${session.taskId}-${session.sessionNumber || 0}-${session.startTime || ''}-${plan.date}`}
-                          className={`flex items-center justify-between p-2 rounded ${
-                            isRescheduled 
-                              ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800' 
-                              : 'bg-gray-50 dark:bg-gray-900'
-                          }`}
-                        >
+  key={`upcoming-${session.taskId}-${session.sessionNumber || 0}-${session.startTime || ''}-${plan.date}`}
+  className={`flex items-center justify-between p-2 rounded ${
+    isRescheduled 
+      ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800' 
+      : 'bg-gray-50 dark:bg-gray-900'
+  } ${
+    editingSessionTime && editingSessionTime.planDate === plan.date && editingSessionTime.taskId === session.taskId && editingSessionTime.sessionNumber === session.sessionNumber
+      ? 'ring-2 ring-blue-300 dark:ring-blue-600' 
+      : ''
+  }`}
+>
                           <div className="flex items-center space-x-2">
                             <span className={`text-sm font-medium ${
                               isRescheduled 
@@ -1249,64 +1274,76 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
                           <div className="flex items-center space-x-2">
                           <div className="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-300">
                             {editingSessionTime && 
-                             editingSessionTime.planDate === plan.date && 
-                             editingSessionTime.taskId === session.taskId && 
-                             editingSessionTime.sessionNumber === session.sessionNumber ? (
-                              <div className="flex items-center space-x-2">
-                                <input
-                                  type="time"
-                                  value={editingSessionTime.newStartTime}
-                                  onChange={(e) => setEditingSessionTime({
-                                    ...editingSessionTime,
-                                    newStartTime: e.target.value
-                                  })}
-                                  className="px-2 py-1 border rounded text-xs dark:bg-gray-700 dark:border-gray-600"
-                                />
-                                <span>-</span>
-                                <input
-                                  type="time"
-                                  value={editingSessionTime.newEndTime}
-                                  onChange={(e) => setEditingSessionTime({
-                                    ...editingSessionTime,
-                                    newEndTime: e.target.value
-                                  })}
-                                  className="px-2 py-1 border rounded text-xs dark:bg-gray-700 dark:border-gray-600"
-                                />
-                                <button
-                                  onClick={handleTimeEditSave}
-                                  className="p-1 text-green-600 hover:text-green-800 dark:text-green-400"
-                                  title="Save time changes"
-                                >
-                                  <Save size={12} />
-                                </button>
-                                <button
-                                  onClick={handleTimeEditCancel}
-                                  className="p-1 text-gray-600 hover:text-gray-800 dark:text-gray-400"
-                                  title="Cancel editing"
-                                >
-                                  <X size={12} />
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center space-x-2">
-                                <span>{session.startTime} - {session.endTime}</span>
-                                {plan.isLocked && (
-                                  <button
-                                    onClick={() => handleStartTimeEdit(
-                                      plan.date, 
-                                      session.taskId, 
-                                      session.sessionNumber || 0, 
-                                      session.startTime, 
-                                      session.endTime
-                                    )}
-                                    className="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 opacity-60 hover:opacity-100"
-                                    title="Edit session time (locked day only)"
-                                  >
-                                    <Edit size={10} />
-                                  </button>
-                                )}
-                              </div>
-                            )}
+ editingSessionTime.planDate === plan.date && 
+ editingSessionTime.taskId === session.taskId && 
+ editingSessionTime.sessionNumber === session.sessionNumber ? (
+  <div className="flex items-center space-x-2 bg-white dark:bg-gray-700 p-2 rounded border-2 border-blue-300 dark:border-blue-600" onClick={(e) => e.stopPropagation()}>
+    <span className="text-xs font-medium text-gray-700 dark:text-gray-200">Start:</span>
+    <input
+      type="time"
+      value={editingSessionTime.newStartTime}
+      onChange={(e) => {
+        const startTime = e.target.value;
+        const [hours, minutes] = startTime.split(':').map(Number);
+        const startDate = new Date();
+        startDate.setHours(hours, minutes, 0, 0);
+        const endDate = new Date(startDate.getTime() + session.allocatedHours * 60 * 60 * 1000);
+        const endTime = endDate.getHours().toString().padStart(2, '0') + ':' + endDate.getMinutes().toString().padStart(2, '0');
+        
+        setEditingSessionTime({
+          ...editingSessionTime,
+          newStartTime: startTime,
+          newEndTime: endTime
+        });
+      }}
+      className="px-2 py-1 border-2 border-gray-300 rounded text-xs focus:border-blue-500 focus:outline-none dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+      autoFocus
+    />
+    <span className="text-xs text-gray-500 dark:text-gray-400">→ {editingSessionTime.newEndTime}</span>
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        handleTimeEditSave();
+      }}
+      className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded text-xs transition-colors"
+      title="Save time changes"
+    >
+      Save
+    </button>
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        handleTimeEditCancel();
+      }}
+      className="px-2 py-1 bg-gray-500 hover:bg-gray-600 text-white rounded text-xs transition-colors"
+      title="Cancel editing"
+    >
+      Cancel
+    </button>
+  </div>
+) : (
+  <div className="flex items-center space-x-2">
+    <span>{session.startTime} - {session.endTime}</span>
+    {plan.isLocked && (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          handleStartTimeEdit(
+            plan.date, 
+            session.taskId, 
+            session.sessionNumber || 0, 
+            session.startTime, 
+            session.endTime
+          );
+        }}
+        className="px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-600 hover:text-blue-800 dark:bg-blue-900 dark:hover:bg-blue-800 dark:text-blue-400 rounded transition-colors"
+        title="Edit start time"
+      >
+        <Edit size={12} />
+      </button>
+    )}
+  </div>
+)}
                             <span>•</span>
                             <span>{formatTime(session.allocatedHours)}</span>
                             {isRescheduled && session.originalTime && (
