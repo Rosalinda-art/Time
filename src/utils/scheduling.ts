@@ -684,13 +684,14 @@ export const generateNewStudyPlan = (
         
         const combinedSessions: StudySession[] = [];
         
-        // Combine sessions for each task - only if they are truly adjacent
+        // Combine sessions for each task - be more aggressive about combining
         Object.entries(sessionsByTask).forEach(([taskId, sessions]) => {
           if (sessions.length > 1) {
             // Sort sessions by start time
             sessions.sort((a, b) => a.startTime.localeCompare(b.startTime));
 
-            // Group adjacent sessions together
+            // Check if we can combine sessions with small gaps (up to 30 minutes)
+            const maxGapMinutes = 30;
             let currentGroup: StudySession[] = [sessions[0]];
             const sessionGroups: StudySession[][] = [];
 
@@ -698,45 +699,67 @@ export const generateNewStudyPlan = (
               const currentSession = sessions[i];
               const lastInGroup = currentGroup[currentGroup.length - 1];
 
-              // Check if sessions are adjacent (current starts when last ends)
-              if (currentSession.startTime === lastInGroup.endTime) {
-                currentGroup.push(currentSession);
+              // Calculate gap between sessions
+              const lastEndTime = lastInGroup.endTime;
+              const currentStartTime = currentSession.startTime;
+
+              if (lastEndTime && currentStartTime) {
+                const [lastEndHour, lastEndMin] = lastEndTime.split(':').map(Number);
+                const [currentStartHour, currentStartMin] = currentStartTime.split(':').map(Number);
+
+                const lastEndMinutes = lastEndHour * 60 + lastEndMin;
+                const currentStartMinutes = currentStartHour * 60 + currentStartMin;
+                const gapMinutes = currentStartMinutes - lastEndMinutes;
+
+                // Combine if adjacent or if gap is small enough
+                if (gapMinutes <= maxGapMinutes) {
+                  currentGroup.push(currentSession);
+                } else {
+                  // Gap too large, start a new group
+                  sessionGroups.push(currentGroup);
+                  currentGroup = [currentSession];
+                }
               } else {
-                // Not adjacent, start a new group
-                sessionGroups.push(currentGroup);
-                currentGroup = [currentSession];
+                // No time slots assigned yet, just group together
+                currentGroup.push(currentSession);
               }
             }
             // Add the last group
             sessionGroups.push(currentGroup);
 
-            // Combine each group of adjacent sessions
+            // Combine each group
             sessionGroups.forEach((group, groupIndex) => {
               if (group.length > 1) {
                 const firstSession = group[0];
                 const lastSession = group[group.length - 1];
                 const totalHours = group.reduce((sum, session) => sum + session.allocatedHours, 0);
 
+                // For multiple sessions, combine them into one larger session
                 const combinedSession: StudySession = {
                   ...firstSession,
-                  startTime: firstSession.startTime,
-                  endTime: lastSession.endTime,
+                  startTime: firstSession.startTime || '',
+                  endTime: lastSession.endTime || '',
                   allocatedHours: totalHours,
-                  sessionNumber: groupIndex + 1
+                  sessionNumber: 1, // Reset to 1 since we're combining
+                  isFlexible: true
                 };
 
                 combinedSessions.push(combinedSession);
+                console.log(`Combined ${group.length} sessions for task ${taskId} into ${totalHours}h session`);
               } else {
-                // Single session in group, keep as is but update session number
+                // Single session in group, keep as is
                 combinedSessions.push({
                   ...group[0],
-                  sessionNumber: groupIndex + 1
+                  sessionNumber: 1 // Normalize session number
                 });
               }
             });
           } else {
             // Single session, keep as is
-            combinedSessions.push(sessions[0]);
+            combinedSessions.push({
+              ...sessions[0],
+              sessionNumber: 1 // Normalize session number
+            });
           }
         });
         
