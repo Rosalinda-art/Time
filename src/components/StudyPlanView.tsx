@@ -816,16 +816,17 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
                   <Lightbulb className="text-yellow-600 dark:text-yellow-400" size={16} />
                 </button>
               )}
-              <LockDayButton
-                date={todaysPlan.date}
-                isLocked={todaysPlan.isLocked || false}
-                studyPlans={studyPlans}
-                tasks={tasks}
-                settings={settings}
-                fixedCommitments={fixedCommitments}
-                onToggleDayLock={handleToggleDayLock}
-                className="ml-2"
-              />
+              <button
+                onClick={() => handleToggleDayLock(todaysPlan.date, !(todaysPlan.isLocked || false))}
+                className={`ml-2 p-1.5 rounded-full transition-colors duration-200 ${
+                  todaysPlan.isLocked
+                    ? 'text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 dark:hover:bg-yellow-900/20'
+                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                }`}
+                title={todaysPlan.isLocked ? "Unlock day - Allow changes to today's sessions" : "Lock day - Protect today's sessions from changes"}
+              >
+                {todaysPlan.isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+              </button>
             </h2>
             <div className="flex items-center space-x-4">
               <div className="text-sm text-gray-500 dark:text-gray-300">
