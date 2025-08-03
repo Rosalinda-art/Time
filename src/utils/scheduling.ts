@@ -1003,9 +1003,27 @@ export const generateNewStudyPlan = (
       
       for (const task of tasksWithMissedSessions) {
         if (!task) continue;
-        
+
         const missedHours = missedSessionHoursByTask[task.id];
         if (missedHours <= 0) continue;
+
+        // Check if this task has sessions on locked days - if so, don't redistribute missed sessions
+        // as the locked sessions represent the user's fixed commitment to those time slots
+        let hasLockedSessions = false;
+        studyPlans.forEach(plan => {
+          if (plan.isLocked) {
+            plan.plannedTasks.forEach(session => {
+              if (session.taskId === task.id) {
+                hasLockedSessions = true;
+              }
+            });
+          }
+        });
+
+        if (hasLockedSessions) {
+          console.log(`Skipping missed session redistribution for "${task.title}" - has sessions on locked days`);
+          continue;
+        }
         
         // Get deadline for this task
         const deadline = new Date(task.deadline);
