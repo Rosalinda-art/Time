@@ -90,6 +90,7 @@ export interface StudyPlan {
   totalStudyHours: number;
   availableHours: number; // How much time is actually available this day
   isOverloaded?: boolean; // Is this day too packed?
+  isLocked?: boolean; // Whether this day is locked from changes
 }
 
 export interface UserSettings {

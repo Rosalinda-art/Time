@@ -510,6 +510,9 @@ export class EnhancedRedistributionEngine {
     const plan = studyPlans.find(p => p.date === planDate);
     if (!plan) return false;
     
+    // Don't allow skipping sessions on locked days
+    if (plan.isLocked) return false;
+    
     const session = plan.plannedTasks.find(
       s => s.taskId === taskId && s.sessionNumber === sessionNumber
     );
@@ -669,6 +672,11 @@ export class EnhancedRedistributionEngine {
       // Get existing sessions for this day
       const targetPlan = workingPlans.find(p => p.date === targetDateStr);
       const existingSessions = targetPlan ? targetPlan.plannedTasks : [];
+      
+      // Skip locked days
+      if (targetPlan?.isLocked) {
+        continue;
+      }
       
       // Find available slot
       const slot = this.conflictChecker.findNextAvailableSlot(

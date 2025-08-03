@@ -2356,9 +2356,15 @@ export const moveIndividualSession = (
   const updatedPlans = [...studyPlans];
   const today = getLocalDateString();
   
+  // Check if the original plan date is locked
+  const originalPlan = updatedPlans.find(p => p.date === originalPlanDate);
+  if (originalPlan?.isLocked) {
+    return { success: false, newTime: null, newDate: null };
+  }
+  
   // Try to move to today
   const todayPlan = updatedPlans.find(p => p.date === today);
-  if (todayPlan && settings.workDays.includes(new Date().getDay())) {
+  if (todayPlan && !todayPlan.isLocked && settings.workDays.includes(new Date().getDay())) {
     const availableSlots = getDailyAvailableTimeSlots(
       new Date(today),
       settings.dailyAvailableHours,
@@ -2424,9 +2430,9 @@ export const applyUserReschedules = (
       continue;
     }
     
-    // Apply the reschedule
+    // Apply the reschedule only if both original and target days are not locked
     const targetPlan = updatedPlans.find(p => p.date === reschedule.newPlanDate);
-    if (targetPlan) {
+    if (targetPlan && !originalPlan?.isLocked && !targetPlan.isLocked) {
       const newSession = {...originalSession};
       newSession.startTime = reschedule.newStartTime;
       newSession.endTime = reschedule.newEndTime;
@@ -2436,6 +2442,9 @@ export const applyUserReschedules = (
       
       targetPlan.plannedTasks.push(newSession);
       validReschedules.push(reschedule);
+    } else if (originalPlan?.isLocked || targetPlan?.isLocked) {
+      // If either day is locked, mark as obsolete
+      obsoleteReschedules.push(reschedule);
     }
   }
   

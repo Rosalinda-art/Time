@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, BookOpen, TrendingUp, AlertTriangle, CheckCircle, Lightbulb, X, CheckCircle2, Clock3 } from 'lucide-react';
+import { Calendar, Clock, BookOpen, TrendingUp, AlertTriangle, CheckCircle, Lightbulb, X, CheckCircle2, Clock3, Lock, Unlock, Edit, Save } from 'lucide-react';
 import { StudyPlan, Task, StudySession, FixedCommitment, UserSettings } from '../types'; // Added FixedCommitment to imports
 import { formatTime, generateSmartSuggestions, getLocalDateString, checkSessionStatus, getDailyAvailableTimeSlots, findNextAvailableStartTime, moveIndividualSession, redistributeMissedSessionsEnhanced, skipSessionEnhanced, validateTimeSlot } from '../utils/scheduling';
 import { RedistributionOptions } from '../types';
@@ -16,6 +16,8 @@ interface StudyPlanViewProps {
   onSkipMissedSession: (planDate: string, sessionNumber: number, taskId: string) => void;
   onRedistributeMissedSessions?: () => void; // NEW PROP for redistribution
   onEnhancedRedistribution?: () => void; // Enhanced redistribution prop
+  onToggleDayLock?: (date: string, isLocked: boolean) => void; // NEW PROP for lock toggle
+  onUpdateSessionTime?: (planDate: string, taskId: string, sessionNumber: number, newStartTime: string, newEndTime: string) => void; // NEW PROP for time editing
 }
 
 // Force warnings UI to be hidden for all users on first load unless they have a preference
@@ -25,7 +27,7 @@ if (typeof window !== 'undefined') {
   }
 }
 
-const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedCommitments, onSelectTask, onGenerateStudyPlan, onUndoSessionDone, settings, onAddFixedCommitment, onSkipMissedSession, onRedistributeMissedSessions, onEnhancedRedistribution }) => {
+const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedCommitments, onSelectTask, onGenerateStudyPlan, onUndoSessionDone, settings, onAddFixedCommitment, onSkipMissedSession, onRedistributeMissedSessions, onEnhancedRedistribution, onToggleDayLock, onUpdateSessionTime }) => {
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
   const [] = useState<{ taskTitle: string; unscheduledMinutes: number } | null>(null);
   const [showRegenerateConfirmation, setShowRegenerateConfirmation] = useState(false);
@@ -56,6 +58,15 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
     setShowWarningsRaw(newVal);
     localStorage.setItem('timepilot-showWarnings', newVal ? 'true' : 'false');
   };
+  
+  // Time editing state for locked days
+  const [editingSessionTime, setEditingSessionTime] = useState<{
+    planDate: string;
+    taskId: string;
+    sessionNumber: number;
+    newStartTime: string;
+    newEndTime: string;
+  } | null>(null);
 
   // Hide the warning notification on mount (e.g., when switching tabs)
   useEffect(() => {
@@ -257,6 +268,91 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
       onSkipMissedSession(planDate, sessionNumber, taskId);
       setNotificationMessage('Session skipped! It will not be redistributed in future plans.');
     }
+  };
+
+  // Lock day handler
+  const handleToggleDayLock = (date: string, currentLockState: boolean) => {
+    if (onToggleDayLock) {
+      onToggleDayLock(date, !currentLockState);
+      setNotificationMessage(
+        !currentLockState 
+          ? `Day locked! Sessions on ${new Date(date).toLocaleDateString()} are now protected from changes.`
+          : `Day unlocked! Sessions on ${new Date(date).toLocaleDateString()} can now be modified.`
+      );
+      setTimeout(() => setNotificationMessage(null), 3000);
+    }
+  };
+
+  // Time editing handlers for locked days
+  const handleStartTimeEdit = (planDate: string, taskId: string, sessionNumber: number, currentStartTime: string, currentEndTime: string) => {
+    setEditingSessionTime({
+      planDate,
+      taskId,
+      sessionNumber,
+      newStartTime: currentStartTime,
+      newEndTime: currentEndTime
+    });
+  };
+
+  const handleTimeEditSave = () => {
+    if (!editingSessionTime || !onUpdateSessionTime) return;
+
+    const { planDate, taskId, sessionNumber, newStartTime, newEndTime } = editingSessionTime;
+    
+    // Validate time format and logic
+    if (newStartTime >= newEndTime) {
+      setNotificationMessage('End time must be after start time.');
+      setTimeout(() => setNotificationMessage(null), 3000);
+      return;
+    }
+
+    // Check for overlaps with other sessions and commitments
+    const plan = studyPlans.find(p => p.date === planDate);
+    if (!plan) return;
+
+    const otherSessions = plan.plannedTasks.filter(s => 
+      !(s.taskId === taskId && s.sessionNumber === sessionNumber)
+    );
+
+    // Check for session overlaps
+    const hasOverlap = otherSessions.some(session => {
+      return (newStartTime < session.endTime && newEndTime > session.startTime);
+    });
+
+    if (hasOverlap) {
+      setNotificationMessage('Time conflicts with another session. Please choose a different time.');
+      setTimeout(() => setNotificationMessage(null), 3000);
+      return;
+    }
+
+    // Check for commitment overlaps
+    const dayOfWeek = new Date(planDate).getDay();
+    const hasCommitmentOverlap = fixedCommitments.some(commitment => {
+      if (commitment.recurring && commitment.daysOfWeek.includes(dayOfWeek)) {
+        return (newStartTime < commitment.endTime && newEndTime > commitment.startTime);
+      }
+      if (!commitment.recurring && commitment.specificDates?.includes(planDate)) {
+        return (newStartTime < commitment.endTime && newEndTime > commitment.startTime);
+      }
+      return false;
+    });
+
+    if (hasCommitmentOverlap) {
+      setNotificationMessage('Time conflicts with a fixed commitment. Please choose a different time.');
+      setTimeout(() => setNotificationMessage(null), 3000);
+      return;
+    }
+
+    // Call the parent handler to update session time
+    onUpdateSessionTime(planDate, taskId, sessionNumber, newStartTime, newEndTime);
+
+    setEditingSessionTime(null);
+    setNotificationMessage('Session time updated successfully!');
+    setTimeout(() => setNotificationMessage(null), 3000);
+  };
+
+  const handleTimeEditCancel = () => {
+    setEditingSessionTime(null);
   };
 
   // Enhanced redistribution handler
@@ -702,6 +798,12 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
             <h2 className="text-xl font-semibold text-gray-800 flex items-center space-x-2 dark:text-white">
               <Calendar className="text-blue-600 dark:text-blue-400" size={24} />
               <span>Today's Sessions</span>
+              {todaysPlan.isLocked && (
+                <span className="inline-flex items-center px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full dark:bg-red-900 dark:text-red-300" title="Day is locked - sessions are protected from automatic changes, but you can manually edit session times">
+                  <Lock size={12} className="mr-1" />
+                  Locked
+                </span>
+              )}
               {suggestions.length > 0 && (
                 <button 
                   onClick={() => setShowSmartAssistant(!showSmartAssistant)}
@@ -711,6 +813,21 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
                   <Lightbulb className="text-yellow-600 dark:text-yellow-400" size={16} />
                 </button>
               )}
+              <button 
+                onClick={() => handleToggleDayLock(todaysPlan.date, todaysPlan.isLocked || false)}
+                className={`ml-2 p-1.5 rounded-full transition-colors duration-200 ${
+                  todaysPlan.isLocked 
+                    ? 'bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:hover:bg-red-800' 
+                    : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600'
+                }`}
+                title={todaysPlan.isLocked ? "Unlock day - Allow changes to today's sessions" : "Lock day - Protect today's sessions from changes"}
+              >
+                {todaysPlan.isLocked ? (
+                  <Lock className="text-red-600 dark:text-red-400" size={16} />
+                ) : (
+                  <Unlock className="text-gray-600 dark:text-gray-400" size={16} />
+                )}
+              </button>
             </h2>
             <div className="flex items-center space-x-4">
               <div className="text-sm text-gray-500 dark:text-gray-300">
@@ -890,7 +1007,65 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
                   <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-200">
                     <div className="flex items-center space-x-1">
                       <Clock size={16} />
-                      {session.startTime} - {session.endTime}
+                      {editingSessionTime && 
+                       editingSessionTime.planDate === todaysPlan.date && 
+                       editingSessionTime.taskId === session.taskId && 
+                       editingSessionTime.sessionNumber === session.sessionNumber ? (
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="time"
+                            value={editingSessionTime.newStartTime}
+                            onChange={(e) => setEditingSessionTime({
+                              ...editingSessionTime,
+                              newStartTime: e.target.value
+                            })}
+                            className="px-2 py-1 border rounded text-xs dark:bg-gray-700 dark:border-gray-600"
+                          />
+                          <span>-</span>
+                          <input
+                            type="time"
+                            value={editingSessionTime.newEndTime}
+                            onChange={(e) => setEditingSessionTime({
+                              ...editingSessionTime,
+                              newEndTime: e.target.value
+                            })}
+                            className="px-2 py-1 border rounded text-xs dark:bg-gray-700 dark:border-gray-600"
+                          />
+                          <button
+                            onClick={handleTimeEditSave}
+                            className="p-1 text-green-600 hover:text-green-800 dark:text-green-400"
+                            title="Save time changes"
+                          >
+                            <Save size={14} />
+                          </button>
+                          <button
+                            onClick={handleTimeEditCancel}
+                            className="p-1 text-gray-600 hover:text-gray-800 dark:text-gray-400"
+                            title="Cancel editing"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center space-x-2">
+                          <span>{session.startTime} - {session.endTime}</span>
+                          {todaysPlan.isLocked && !isDone && !isCompleted && sessionStatus !== 'missed' && (
+                            <button
+                              onClick={() => handleStartTimeEdit(
+                                todaysPlan.date, 
+                                session.taskId, 
+                                session.sessionNumber || 0, 
+                                session.startTime, 
+                                session.endTime
+                              )}
+                              className="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 opacity-60 hover:opacity-100"
+                              title="Edit session time (locked day only)"
+                            >
+                              <Edit size={12} />
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center space-x-1">
                       <TrendingUp size={16} />
@@ -991,13 +1166,36 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
               .map((plan) => (
                 <div key={plan.id} className="border rounded-lg p-4 dark:bg-gray-800 dark:border-gray-700">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-medium text-gray-800 dark:text-white">
-                      {new Date(plan.date).toLocaleDateString('en-US', {
-                        weekday: 'long',
-                        month: 'short',
-                        day: 'numeric'
-                      })}
-                    </h3>
+                    <div className="flex items-center space-x-2">
+                      <h3 className="font-medium text-gray-800 dark:text-white">
+                        {new Date(plan.date).toLocaleDateString('en-US', {
+                          weekday: 'long',
+                          month: 'short',
+                          day: 'numeric'
+                        })}
+                      </h3>
+                      {plan.isLocked && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 text-xs bg-red-100 text-red-800 rounded-full dark:bg-red-900 dark:text-red-300">
+                          <Lock size={10} className="mr-1" />
+                          Locked
+                        </span>
+                      )}
+                      <button 
+                        onClick={() => handleToggleDayLock(plan.date, plan.isLocked || false)}
+                        className={`p-1 rounded transition-colors duration-200 ${
+                          plan.isLocked 
+                            ? 'bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:hover:bg-red-800' 
+                            : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600'
+                        }`}
+                        title={plan.isLocked ? "Unlock day - Allow changes to this day's sessions" : "Lock day - Protect this day's sessions from changes"}
+                      >
+                        {plan.isLocked ? (
+                          <Lock className="text-red-600 dark:text-red-400" size={14} />
+                        ) : (
+                          <Unlock className="text-gray-600 dark:text-gray-400" size={14} />
+                        )}
+                      </button>
+                    </div>
                     <div className="flex items-center space-x-2">
                       <span className="text-sm text-gray-500 dark:text-gray-300">
                         {formatTime(plan.plannedTasks
@@ -1050,7 +1248,65 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
                           </div>
                           <div className="flex items-center space-x-2">
                           <div className="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-300">
-                            <span>{session.startTime} - {session.endTime}</span>
+                            {editingSessionTime && 
+                             editingSessionTime.planDate === plan.date && 
+                             editingSessionTime.taskId === session.taskId && 
+                             editingSessionTime.sessionNumber === session.sessionNumber ? (
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="time"
+                                  value={editingSessionTime.newStartTime}
+                                  onChange={(e) => setEditingSessionTime({
+                                    ...editingSessionTime,
+                                    newStartTime: e.target.value
+                                  })}
+                                  className="px-2 py-1 border rounded text-xs dark:bg-gray-700 dark:border-gray-600"
+                                />
+                                <span>-</span>
+                                <input
+                                  type="time"
+                                  value={editingSessionTime.newEndTime}
+                                  onChange={(e) => setEditingSessionTime({
+                                    ...editingSessionTime,
+                                    newEndTime: e.target.value
+                                  })}
+                                  className="px-2 py-1 border rounded text-xs dark:bg-gray-700 dark:border-gray-600"
+                                />
+                                <button
+                                  onClick={handleTimeEditSave}
+                                  className="p-1 text-green-600 hover:text-green-800 dark:text-green-400"
+                                  title="Save time changes"
+                                >
+                                  <Save size={12} />
+                                </button>
+                                <button
+                                  onClick={handleTimeEditCancel}
+                                  className="p-1 text-gray-600 hover:text-gray-800 dark:text-gray-400"
+                                  title="Cancel editing"
+                                >
+                                  <X size={12} />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center space-x-2">
+                                <span>{session.startTime} - {session.endTime}</span>
+                                {plan.isLocked && (
+                                  <button
+                                    onClick={() => handleStartTimeEdit(
+                                      plan.date, 
+                                      session.taskId, 
+                                      session.sessionNumber || 0, 
+                                      session.startTime, 
+                                      session.endTime
+                                    )}
+                                    className="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 opacity-60 hover:opacity-100"
+                                    title="Edit session time (locked day only)"
+                                  >
+                                    <Edit size={10} />
+                                  </button>
+                                )}
+                              </div>
+                            )}
                             <span>•</span>
                             <span>{formatTime(session.allocatedHours)}</span>
                             {isRescheduled && session.originalTime && (

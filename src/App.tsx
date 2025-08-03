@@ -463,10 +463,22 @@ function App() {
                     const result = generateNewStudyPlan(tasks, settings, fixedCommitments, studyPlans);
                     const newPlans = result.plans;
                     
-                    // Enhanced preservation logic
+                    // Enhanced preservation logic with lock support
                     newPlans.forEach(plan => {
                         const prevPlan = studyPlans.find(p => p.date === plan.date);
                         if (!prevPlan) return;
+                        
+                        // Preserve lock status
+                        plan.isLocked = prevPlan.isLocked;
+                        
+                        // If day is locked, preserve all sessions exactly as they were
+                        if (prevPlan.isLocked) {
+                            plan.plannedTasks = [...prevPlan.plannedTasks];
+                            plan.totalStudyHours = prevPlan.totalStudyHours;
+                            plan.availableHours = prevPlan.availableHours;
+                            plan.isOverloaded = prevPlan.isOverloaded;
+                            return;
+                        }
                         
                         plan.plannedTasks.forEach(session => {
                             const prevSession = prevPlan.plannedTasks.find(s => 
@@ -496,7 +508,7 @@ function App() {
                                     // Move session to the rescheduled date if different
                                     if (prevSession.originalDate !== plan.date) {
                                         const targetPlan = newPlans.find(p => p.date === prevSession.originalDate);
-                                        if (targetPlan) {
+                                        if (targetPlan && !targetPlan.isLocked) { // Only move if target day is not locked
                                             targetPlan.plannedTasks.push(session);
                                             plan.plannedTasks = plan.plannedTasks.filter(s => s !== session);
                                         }
@@ -516,12 +528,24 @@ function App() {
             const result = generateNewStudyPlan(tasks, settings, fixedCommitments, studyPlans);
             const newPlans = result.plans;
             
-            // Preserve session status from previous plan
+            // Preserve session status from previous plan and respect locked days
             newPlans.forEach(plan => {
                 const prevPlan = studyPlans.find(p => p.date === plan.date);
                 if (!prevPlan) return;
                 
-                // Preserve session status and properties
+                // Preserve lock status
+                plan.isLocked = prevPlan.isLocked;
+                
+                // If day is locked, preserve all sessions exactly as they were
+                if (prevPlan.isLocked) {
+                    plan.plannedTasks = [...prevPlan.plannedTasks];
+                    plan.totalStudyHours = prevPlan.totalStudyHours;
+                    plan.availableHours = prevPlan.availableHours;
+                    plan.isOverloaded = prevPlan.isOverloaded;
+                    return;
+                }
+                
+                // Preserve session status and properties for unlocked days
                 plan.plannedTasks.forEach(session => {
                     const prevSession = prevPlan.plannedTasks.find(s => s.taskId === session.taskId && s.sessionNumber === session.sessionNumber);
                     if (prevSession) {
@@ -1765,6 +1789,43 @@ function App() {
         });
     };
 
+    const handleToggleDayLock = (date: string, isLocked: boolean) => {
+        setStudyPlans(prevPlans => {
+            return prevPlans.map(plan => {
+                if (plan.date === date) {
+                    return {
+                        ...plan,
+                        isLocked
+                    };
+                }
+                return plan;
+            });
+        });
+    };
+
+    const handleUpdateSessionTime = (planDate: string, taskId: string, sessionNumber: number, newStartTime: string, newEndTime: string) => {
+        setStudyPlans(prevPlans => {
+            return prevPlans.map(plan => {
+                if (plan.date === planDate) {
+                    return {
+                        ...plan,
+                        plannedTasks: plan.plannedTasks.map(session => {
+                            if (session.taskId === taskId && session.sessionNumber === sessionNumber) {
+                                return {
+                                    ...session,
+                                    startTime: newStartTime,
+                                    endTime: newEndTime
+                                };
+                            }
+                            return session;
+                        })
+                    };
+                }
+                return plan;
+            });
+        });
+    };
+
     // Interactive tutorial handlers
     const handleStartTutorial = () => {
         setShowInteractiveTutorial(true);
@@ -2107,6 +2168,8 @@ function App() {
                             onSkipMissedSession={handleSkipMissedSession}
                 onRedistributeMissedSessions={handleRedistributeMissedSessions}
                 onEnhancedRedistribution={handleEnhancedRedistribution}
+                            onToggleDayLock={handleToggleDayLock}
+                            onUpdateSessionTime={handleUpdateSessionTime}
                         />
                     )}
 
