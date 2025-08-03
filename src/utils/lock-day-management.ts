@@ -47,17 +47,21 @@ export const validateDayLock = (
   const plannedSessions = targetPlan.plannedTasks || [];
   affectedSessions.push(...plannedSessions);
 
-  // Check 1: Critical deadline sessions
+  // Check 1: Critical deadline sessions - Only block if deadline is TODAY or past
   const criticalSessions = plannedSessions.filter(session => {
     const task = tasks.find(t => t.id === session.taskId);
-    if (!task) return false;
-    
-    const daysUntilDeadline = (new Date(task.deadline).getTime() - new Date(date).getTime()) / (1000 * 60 * 60 * 24);
-    return daysUntilDeadline <= 2 && task.importance;
+    if (!task || !task.deadline) return false;
+
+    const deadlineDate = new Date(task.deadline).toISOString().split('T')[0];
+    const sessionDate = date;
+    const today = new Date().toISOString().split('T')[0];
+
+    // Only block if the session is on/past the deadline and the task is important
+    return deadlineDate <= sessionDate && task.importance && sessionDate <= today;
   });
 
   if (criticalSessions.length > 0) {
-    blockers.push(`Cannot lock day with ${criticalSessions.length} critical session(s) within 2 days of deadline`);
+    blockers.push(`Cannot lock day with ${criticalSessions.length} critical session(s) at or past deadline`);
   }
 
   // Check 2: One-time tasks that cannot be redistributed
