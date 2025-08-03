@@ -141,8 +141,11 @@ export const LockDayButton: React.FC<{
   const [redistributionInProgress, setRedistributionInProgress] = useState(false);
 
   const handleLockToggle = () => {
+    console.log('handleLockToggle called for date:', date, 'isLocked:', isLocked);
+
     if (isLocked) {
       // Unlocking - check if we need to redistribute sessions back
+      console.log('Unlocking day');
       if (onRedistributePlans) {
         setRedistributionInProgress(true);
         const redistributionResult = redistributeFromLockedDays(
@@ -151,7 +154,7 @@ export const LockDayButton: React.FC<{
           settings,
           fixedCommitments
         );
-        
+
         if (redistributionResult.success) {
           onRedistributePlans(redistributionResult.modifiedPlans);
         }
@@ -160,14 +163,19 @@ export const LockDayButton: React.FC<{
       onToggleDayLock(date, false);
     } else {
       // Locking - validate first
+      console.log('Attempting to lock day');
       const lockValidation = validateDayLock(date, studyPlans, tasks, settings, fixedCommitments);
       setValidation(lockValidation);
-      
+
+      console.log('Lock validation result:', lockValidation);
+
       if (lockValidation.canLock && lockValidation.warnings.length === 0) {
         // Direct lock if no warnings
+        console.log('Direct locking (no warnings)');
         onToggleDayLock(date, true);
       } else {
         // Show confirmation dialog
+        console.log('Showing confirmation dialog');
         setShowConfirmation(true);
       }
     }
