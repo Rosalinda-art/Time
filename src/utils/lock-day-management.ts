@@ -89,8 +89,11 @@ export const validateDayLock = (
     warnings.push('Locking weekend days may reduce weekly study capacity');
   }
 
+  const canLock = blockers.length === 0;
+  console.log('Lock validation result:', { canLock, warnings, blockers, affectedSessions: affectedSessions.length });
+
   return {
-    canLock: blockers.length === 0,
+    canLock,
     warnings,
     blockers,
     affectedSessions,
