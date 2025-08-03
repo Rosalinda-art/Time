@@ -1577,17 +1577,7 @@ export const generateNewStudyPlan = (
       if (availableHours <= 0) break;
 
       // Calculate locked hours for this task
-      let lockedHours = 0;
-      studyPlans.forEach(plan => {
-        if (plan.isLocked) {
-          plan.plannedTasks.forEach(session => {
-            if (session.taskId === task.id) {
-              lockedHours += session.allocatedHours;
-            }
-          });
-        }
-      });
-
+      const lockedHours = calculateLockedHours(task.id, studyPlans);
       const adjustedEstimatedHours = Math.max(0, task.estimatedHours - lockedHours);
       const remainingTaskHours = adjustedEstimatedHours - taskScheduledHours[task.id];
       if (remainingTaskHours <= 0) continue;
