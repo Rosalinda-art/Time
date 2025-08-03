@@ -508,6 +508,23 @@ export const generateNewStudyPlan = (
           const dayPlan = studyPlans.find(p => p.date === date);
           return dailyRemainingHours[date] > 0 && !dayPlan?.isLocked;
         });
+
+        // If no available days for redistribution due to locked days,
+        // try to find alternative days beyond the current task deadline
+        if (availableDaysForRedistribution.length === 0) {
+          console.warn(`Task "${task.title}": No available days for redistribution due to locked days`);
+          // Extend search to later available days if task is flexible
+          if (!task.deadlineType || task.deadlineType === 'soft') {
+            const extendedDays = availableDays.filter(date => {
+              const dayPlan = studyPlans.find(p => p.date === date);
+              return dailyRemainingHours[date] > 0 && !dayPlan?.isLocked;
+            });
+            if (extendedDays.length > 0) {
+              console.log(`Found ${extendedDays.length} extended days for redistribution`);
+              return redistributeUnscheduledHours(task, unscheduledHours, extendedDays);
+            }
+          }
+        }
         
         if (availableDaysForRedistribution.length === 0) {
           // No more available days, can't redistribute further
