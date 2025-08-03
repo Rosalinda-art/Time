@@ -860,8 +860,22 @@ export const generateNewStudyPlan = (
       
       for (const task of sortedTasksForGlobalRedistribution) {
         const scheduledHours = taskScheduledHours[task.id] || 0;
-        const unscheduledHours = task.estimatedHours - scheduledHours;
-        
+
+        // Calculate locked hours for this task
+        let lockedHours = 0;
+        studyPlans.forEach(plan => {
+          if (plan.isLocked) {
+            plan.plannedTasks.forEach(session => {
+              if (session.taskId === task.id) {
+                lockedHours += session.allocatedHours;
+              }
+            });
+          }
+        });
+
+        const adjustedEstimatedHours = Math.max(0, task.estimatedHours - lockedHours);
+        const unscheduledHours = adjustedEstimatedHours - scheduledHours;
+
         if (unscheduledHours <= 0) continue;
         
         // Get deadline for this task
