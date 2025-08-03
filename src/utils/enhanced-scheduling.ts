@@ -510,7 +510,7 @@ export class EnhancedRedistributionEngine {
     const plan = studyPlans.find(p => p.date === planDate);
     if (!plan) return false;
     
-    // Don't allow skipping sessions on locked days
+    // Don't allow skipping sessions on locked days (structural change)
     if (plan.isLocked) return false;
     
     const session = plan.plannedTasks.find(

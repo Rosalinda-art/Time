@@ -279,12 +279,18 @@ const CalendarView: React.FC<CalendarViewProps> = ({
           const uniqueId = `study-${session.taskId}-${plan.date}-${session.sessionNumber || 0}-${session.startTime.replace(':', '')}-${idx}`;
           calendarEvents.push({
             id: uniqueId,
-            title: task.title,
+            title: `${plan.isLocked ? '🔒 ' : ''}${task.title}`,
             start,
             end,
             resource: {
               type: 'study',
-              data: { ...session, task, planDate } // Always include planDate
+              data: { 
+                ...session, 
+                task, 
+                planDate,
+                isLocked: plan.isLocked,
+                status: checkSessionStatus(session, planDate)
+              }
             }
           });
         });

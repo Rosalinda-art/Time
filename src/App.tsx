@@ -669,9 +669,16 @@ function App() {
         // Use the same plans for validation to ensure consistency
         const newPlans = plans;
         
-        // Check if the new task has any unscheduled time (excluding skipped sessions)
+        // Check if the new task has any unscheduled time (excluding skipped sessions and accounting for locked days)
         const newTaskScheduledHours: Record<string, number> = {};
+        let totalAvailableHoursInUnlockedDays = 0;
+        
         newPlans.forEach(plan => {
+          // Count available hours in unlocked days only
+          if (!plan.isLocked) {
+            totalAvailableHoursInUnlockedDays += plan.availableHours;
+          }
+          
           plan.plannedTasks.forEach(session => {
             // Skip sessions that are marked as skipped - they shouldn't count towards scheduled hours
             if (session.status !== 'skipped') {
@@ -682,14 +689,20 @@ function App() {
         
         const newTaskScheduled = newTaskScheduledHours[newTask.id] || 0;
         
-        // More reasonable feasibility check:
-        // Only block if the task is completely unscheduled OR if more than 50% is unscheduled
+        // Enhanced feasibility check that accounts for locked days:
+        // Calculate how much capacity is actually available in unlocked days
         const totalTaskHours = newTask.estimatedHours;
         const scheduledPercentage = totalTaskHours > 0 ? (newTaskScheduled / totalTaskHours) * 100 : 0;
         const isCompletelyUnscheduled = newTaskScheduled === 0;
-        const isMostlyUnscheduled = scheduledPercentage < 50;
         
-        const blocksNewTask = isCompletelyUnscheduled || isMostlyUnscheduled;
+        // Check if there's sufficient capacity in unlocked days
+        const hasInsufficientCapacity = totalAvailableHoursInUnlockedDays < (totalTaskHours - newTaskScheduled);
+        
+        // More nuanced blocking logic:
+        // Block if completely unscheduled AND there's insufficient capacity in unlocked days
+        // OR if less than 30% scheduled AND insufficient capacity
+        const blocksNewTask = (isCompletelyUnscheduled && hasInsufficientCapacity) || 
+                             (scheduledPercentage < 30 && hasInsufficientCapacity);
         
         if (blocksNewTask) {
             const reason = isCompletelyUnscheduled 
@@ -1589,6 +1602,8 @@ function App() {
         setStudyPlans(prevPlans => {
             const updatedPlans = prevPlans.map(plan => {
                 if (plan.date !== planDate) return plan;
+                
+                // Locked days allow session completion - this is permitted
                 return {
                     ...plan,
                     plannedTasks: plan.plannedTasks.map(session => {
@@ -1628,6 +1643,8 @@ function App() {
         setStudyPlans(prevPlans => {
             const updatedPlans = prevPlans.map(plan => {
                 if (plan.date !== planDate) return plan;
+                
+                // Locked days allow session completion changes - this is permitted
                 return {
                     ...plan,
                     plannedTasks: plan.plannedTasks.map(session => {
@@ -1929,6 +1946,8 @@ function App() {
         setStudyPlans(prevPlans => {
             return prevPlans.map(plan => {
                 if (plan.date === planDate) {
+                    // Locked days allow time adjustments of existing sessions - this is permitted
+                    
                     return {
                         ...plan,
                         plannedTasks: plan.plannedTasks.map(session => {

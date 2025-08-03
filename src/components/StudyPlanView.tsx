@@ -276,8 +276,8 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
       onToggleDayLock(date, !currentLockState);
       setNotificationMessage(
         !currentLockState 
-          ? `Day locked! Sessions on ${new Date(date).toLocaleDateString()} are now protected from changes.`
-          : `Day unlocked! Sessions on ${new Date(date).toLocaleDateString()} can now be modified.`
+          ? `Day locked! ${new Date(date).toLocaleDateString()} is now protected from structural changes (you can still complete sessions and adjust times).`
+          : `Day unlocked! ${new Date(date).toLocaleDateString()} can now have structural changes (adding/removing/moving sessions).`
       );
       setTimeout(() => setNotificationMessage(null), 3000);
     }
@@ -820,7 +820,7 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
                     ? 'bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:hover:bg-red-800' 
                     : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600'
                 }`}
-                title={todaysPlan.isLocked ? "Unlock day - Allow changes to today's sessions" : "Lock day - Protect today's sessions from changes"}
+                title={todaysPlan.isLocked ? "Unlock day - Allow structural changes (adding/removing/moving sessions)" : "Lock day - Prevent structural changes (you can still complete sessions and adjust times)"}
               >
                 {todaysPlan.isLocked ? (
                   <Lock className="text-red-600 dark:text-red-400" size={16} />
@@ -1208,7 +1208,7 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
                             ? 'bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:hover:bg-red-800' 
                             : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600'
                         }`}
-                        title={plan.isLocked ? "Unlock day - Allow changes to this day's sessions" : "Lock day - Protect this day's sessions from changes"}
+                        title={plan.isLocked ? "Unlock day - Allow structural changes (adding/removing/moving sessions)" : "Lock day - Prevent structural changes (you can still complete sessions and adjust times)"}
                       >
                         {plan.isLocked ? (
                           <Lock className="text-red-600 dark:text-red-400" size={14} />
