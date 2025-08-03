@@ -46,6 +46,23 @@ export const formatTimeForTimer = (seconds: number): string => {
 };
 
 /**
+ * Helper function to calculate hours already allocated to a task on locked days
+ */
+const calculateLockedHours = (taskId: string, studyPlans: StudyPlan[]): number => {
+  let lockedHours = 0;
+  studyPlans.forEach(plan => {
+    if (plan.isLocked) {
+      plan.plannedTasks.forEach(session => {
+        if (session.taskId === taskId) {
+          lockedHours += session.allocatedHours;
+        }
+      });
+    }
+  });
+  return lockedHours;
+};
+
+/**
  * Check if a task's frequency preference conflicts with its deadline
  * @param task Task to check
  * @param settings User settings including buffer days and work days
@@ -389,6 +406,8 @@ export const generateNewStudyPlan = (
 ): { plans: StudyPlan[]; suggestions: Array<{ taskTitle: string; unscheduledMinutes: number }> } => {
   // Collect missed sessions from existing plans for redistribution
   const missedSessionsToRedistribute: Array<{session: StudySession, planDate: string, task: Task}> = [];
+  const missedSessionsByTask: { [taskId: string]: StudySession[] } = {};
+
   if (existingStudyPlans.length > 0) {
     existingStudyPlans.forEach(plan => {
       plan.plannedTasks.forEach(session => {
@@ -397,6 +416,12 @@ export const generateNewStudyPlan = (
           const task = tasks.find(t => t.id === session.taskId);
           if (task && task.status === 'pending') {
             missedSessionsToRedistribute.push({session, planDate: plan.date, task});
+
+            // Group missed sessions by task for better redistribution logic
+            if (!missedSessionsByTask[task.id]) {
+              missedSessionsByTask[task.id] = [];
+            }
+            missedSessionsByTask[task.id].push(session);
           }
         }
       });
@@ -425,11 +450,8 @@ export const generateNewStudyPlan = (
     // Use deadline tasks for now (we'll add no-deadline scheduling later)
     const tasksEven = deadlineTasks;
 
-    // Create a map of missed session hours per task for separate redistribution
-    const missedSessionHoursByTask: { [taskId: string]: number } = {};
-    missedSessionsToRedistribute.forEach(({session, task}) => {
-      missedSessionHoursByTask[task.id] = (missedSessionHoursByTask[task.id] || 0) + session.allocatedHours;
-    });
+    // Use the collected missed sessions for redistribution
+    // missedSessionsByTask is already populated from the collection logic above
 
     // Step 1: Create a map of available study days
     const now = new Date();
@@ -446,7 +468,7 @@ export const generateNewStudyPlan = (
       }
       tempDate.setDate(tempDate.getDate() + 1);
     }
-    
+
     // When buffer days is 0, ensure we include the deadline day itself
     if (settings.bufferDays === 0) {
       // Add any missing deadline days that might not be included due to time zone issues
@@ -471,22 +493,41 @@ export const generateNewStudyPlan = (
       // Sort available days to maintain order
       availableDays.sort();
     }
-    
+
 
     const studyPlans: StudyPlan[] = [];
     const dailyRemainingHours: { [date: string]: number } = {};
     availableDays.forEach(date => {
-      dailyRemainingHours[date] = settings.dailyAvailableHours;
-      // Find existing plan to preserve isLocked property
+      // Find existing plan to preserve isLocked property and sessions
       const existingPlan = existingStudyPlans.find(p => p.date === date);
-      studyPlans.push({
-        id: `plan-${date}`,
-        date,
-        plannedTasks: [],
-        totalStudyHours: 0,
-        availableHours: settings.dailyAvailableHours,
-        isLocked: existingPlan?.isLocked || false
-      });
+
+      if (existingPlan?.isLocked) {
+        // For locked days, preserve existing sessions and calculate remaining capacity
+        const existingHours = existingPlan.plannedTasks.reduce((sum, session) => sum + session.allocatedHours, 0);
+        dailyRemainingHours[date] = Math.max(0, settings.dailyAvailableHours - existingHours);
+
+        studyPlans.push({
+          id: existingPlan.id || `plan-${date}`,
+          date,
+          plannedTasks: [...existingPlan.plannedTasks], // Preserve existing sessions
+          totalStudyHours: existingHours,
+          availableHours: settings.dailyAvailableHours,
+          isLocked: true
+        });
+
+        console.log(`Preserved ${existingPlan.plannedTasks.length} sessions on locked day ${date} (${existingHours}h)`);
+      } else {
+        // For unlocked days, start fresh
+        dailyRemainingHours[date] = settings.dailyAvailableHours;
+        studyPlans.push({
+          id: `plan-${date}`,
+          date,
+          plannedTasks: [],
+          totalStudyHours: 0,
+          availableHours: settings.dailyAvailableHours,
+          isLocked: false
+        });
+      }
     });
     let evenTaskScheduledHours: { [taskId: string]: number } = {};
     tasksEven.forEach(task => {
@@ -508,6 +549,23 @@ export const generateNewStudyPlan = (
           const dayPlan = studyPlans.find(p => p.date === date);
           return dailyRemainingHours[date] > 0 && !dayPlan?.isLocked;
         });
+
+        // If no available days for redistribution due to locked days,
+        // try to find alternative days beyond the current task deadline
+        if (availableDaysForRedistribution.length === 0) {
+          console.warn(`Task "${task.title}": No available days for redistribution due to locked days`);
+          // Extend search to later available days if task is flexible
+          if (!task.deadlineType || task.deadlineType === 'soft') {
+            const extendedDays = availableDays.filter(date => {
+              const dayPlan = studyPlans.find(p => p.date === date);
+              return dailyRemainingHours[date] > 0 && !dayPlan?.isLocked;
+            });
+            if (extendedDays.length > 0) {
+              console.log(`Found ${extendedDays.length} extended days for redistribution`);
+              return redistributeUnscheduledHours(task, unscheduledHours, extendedDays);
+            }
+          }
+        }
         
         if (availableDaysForRedistribution.length === 0) {
           // No more available days, can't redistribute further
@@ -520,17 +578,38 @@ export const generateNewStudyPlan = (
         // Calculate optimal distribution for remaining hours
         const optimalSessions = optimizeSessionDistribution(task, remainingUnscheduledHours, availableDaysForRedistribution, settings);
         
-        // Distribute optimal sessions to available days
+        // Distribute optimal sessions to available days, preferring to extend existing sessions
         for (let i = 0; i < optimalSessions.length && i < availableDaysForRedistribution.length; i++) {
           const date = availableDaysForRedistribution[i];
           const dayPlan = studyPlans.find(p => p.date === date)!;
           const availableHours = dailyRemainingHours[date];
           const sessionLength = Math.min(optimalSessions[i], availableHours);
-          
+
           if (sessionLength >= minSessionLength) {
             const roundedSessionLength = Math.round(sessionLength * 60) / 60;
 
-            // Find available time slot for this session to prevent overlaps
+            // Check if this day already has a session for this task that can be extended
+            const existingTaskSession = dayPlan.plannedTasks.find(s => s.taskId === task.id && s.status !== 'skipped');
+
+            if (existingTaskSession && existingTaskSession.endTime) {
+              // Try to extend the existing session instead of creating a new one
+              const extendedHours = existingTaskSession.allocatedHours + roundedSessionLength;
+              const maxSessionLength = Math.min(4, settings.dailyAvailableHours); // Cap at 4 hours
+
+              if (extendedHours <= maxSessionLength) {
+                // Extend the existing session
+                existingTaskSession.allocatedHours = extendedHours;
+                // Update end time (will be recalculated later in time assignment)
+                dayPlan.totalStudyHours = Math.round((dayPlan.totalStudyHours + roundedSessionLength) * 60) / 60;
+                dailyRemainingHours[date] = Math.round((dailyRemainingHours[date] - roundedSessionLength) * 60) / 60;
+                distributedThisRound = Math.round((distributedThisRound + roundedSessionLength) * 60) / 60;
+
+                console.log(`Extended existing session for "${task.title}" on ${date} by ${roundedSessionLength}h (total: ${extendedHours}h)`);
+                continue;
+              }
+            }
+
+            // If no existing session to extend, create a new one
             const commitmentsForDay = fixedCommitments.filter(commitment => {
               if (commitment.recurring) {
                 return commitment.daysOfWeek.includes(new Date(date).getDay());
@@ -564,6 +643,8 @@ export const generateNewStudyPlan = (
               dayPlan.totalStudyHours = Math.round((dayPlan.totalStudyHours + roundedSessionLength) * 60) / 60;
               dailyRemainingHours[date] = Math.round((dailyRemainingHours[date] - roundedSessionLength) * 60) / 60;
               distributedThisRound = Math.round((distributedThisRound + roundedSessionLength) * 60) / 60;
+
+              console.log(`Created new session for "${task.title}" on ${date}: ${roundedSessionLength}h`);
             } else {
               // No available time slot found, skip this distribution
               console.log(`No available time slot found for ${roundedSessionLength} hours on ${date}`);
@@ -603,13 +684,14 @@ export const generateNewStudyPlan = (
         
         const combinedSessions: StudySession[] = [];
         
-        // Combine sessions for each task - only if they are truly adjacent
+        // Combine sessions for each task - be more aggressive about combining
         Object.entries(sessionsByTask).forEach(([taskId, sessions]) => {
           if (sessions.length > 1) {
             // Sort sessions by start time
             sessions.sort((a, b) => a.startTime.localeCompare(b.startTime));
 
-            // Group adjacent sessions together
+            // Check if we can combine sessions with small gaps (up to 30 minutes)
+            const maxGapMinutes = 30;
             let currentGroup: StudySession[] = [sessions[0]];
             const sessionGroups: StudySession[][] = [];
 
@@ -617,45 +699,67 @@ export const generateNewStudyPlan = (
               const currentSession = sessions[i];
               const lastInGroup = currentGroup[currentGroup.length - 1];
 
-              // Check if sessions are adjacent (current starts when last ends)
-              if (currentSession.startTime === lastInGroup.endTime) {
-                currentGroup.push(currentSession);
+              // Calculate gap between sessions
+              const lastEndTime = lastInGroup.endTime;
+              const currentStartTime = currentSession.startTime;
+
+              if (lastEndTime && currentStartTime) {
+                const [lastEndHour, lastEndMin] = lastEndTime.split(':').map(Number);
+                const [currentStartHour, currentStartMin] = currentStartTime.split(':').map(Number);
+
+                const lastEndMinutes = lastEndHour * 60 + lastEndMin;
+                const currentStartMinutes = currentStartHour * 60 + currentStartMin;
+                const gapMinutes = currentStartMinutes - lastEndMinutes;
+
+                // Combine if adjacent or if gap is small enough
+                if (gapMinutes <= maxGapMinutes) {
+                  currentGroup.push(currentSession);
+                } else {
+                  // Gap too large, start a new group
+                  sessionGroups.push(currentGroup);
+                  currentGroup = [currentSession];
+                }
               } else {
-                // Not adjacent, start a new group
-                sessionGroups.push(currentGroup);
-                currentGroup = [currentSession];
+                // No time slots assigned yet, just group together
+                currentGroup.push(currentSession);
               }
             }
             // Add the last group
             sessionGroups.push(currentGroup);
 
-            // Combine each group of adjacent sessions
+            // Combine each group
             sessionGroups.forEach((group, groupIndex) => {
               if (group.length > 1) {
                 const firstSession = group[0];
                 const lastSession = group[group.length - 1];
                 const totalHours = group.reduce((sum, session) => sum + session.allocatedHours, 0);
 
+                // For multiple sessions, combine them into one larger session
                 const combinedSession: StudySession = {
                   ...firstSession,
-                  startTime: firstSession.startTime,
-                  endTime: lastSession.endTime,
+                  startTime: firstSession.startTime || '',
+                  endTime: lastSession.endTime || '',
                   allocatedHours: totalHours,
-                  sessionNumber: groupIndex + 1
+                  sessionNumber: 1, // Reset to 1 since we're combining
+                  isFlexible: true
                 };
 
                 combinedSessions.push(combinedSession);
+                console.log(`Combined ${group.length} sessions for task ${taskId} into ${totalHours}h session`);
               } else {
-                // Single session in group, keep as is but update session number
+                // Single session in group, keep as is
                 combinedSessions.push({
                   ...group[0],
-                  sessionNumber: groupIndex + 1
+                  sessionNumber: 1 // Normalize session number
                 });
               }
             });
           } else {
             // Single session, keep as is
-            combinedSessions.push(sessions[0]);
+            combinedSessions.push({
+              ...sessions[0],
+              sessionNumber: 1 // Normalize session number
+            });
           }
         });
         
@@ -680,11 +784,11 @@ export const generateNewStudyPlan = (
       const deadlineDateStr = deadline.toISOString().split('T')[0];
       // Include all available days up to and including the deadline day
       let daysForTask = availableDays.filter(d => d <= deadlineDateStr);
-      
+
       // Apply frequency preference if enabled and no conflict detected
       if (task.respectFrequencyForDeadlines !== false && task.targetFrequency) {
         const conflictCheck = checkFrequencyDeadlineConflict(task, settings);
-        
+
         if (!conflictCheck.hasConflict) {
           // Apply frequency filtering to respect user preference
           let sessionGap = 1; // Days between sessions
@@ -695,7 +799,7 @@ export const generateNewStudyPlan = (
             sessionGap = task.importance ? 2 : 3; // More frequent for important tasks
           }
           // daily frequency uses sessionGap = 1 (no filtering needed)
-          
+
           if (sessionGap > 1) {
             // Filter days to respect frequency preference
             const frequencyFilteredDays: string[] = [];
@@ -706,15 +810,25 @@ export const generateNewStudyPlan = (
           }
         }
       }
-      
 
-      
+
+
       // If no days available, skip this task
       if (daysForTask.length === 0) {
         continue;
       }
-      
-      let totalHours = task.estimatedHours;
+
+      // Calculate remaining hours to distribute (excluding hours already allocated on locked days)
+      const lockedHours = calculateLockedHours(task.id, studyPlans);
+      let totalHours = Math.max(0, task.estimatedHours - lockedHours);
+
+      // If all hours are already allocated on locked days, skip redistribution
+      if (totalHours <= 0) {
+        console.log(`Task "${task.title}": All ${task.estimatedHours}h already allocated on locked days`);
+        continue;
+      }
+
+      console.log(`Task "${task.title}": ${totalHours}h remaining after ${lockedHours}h on locked days`);
       
       // Use optimized session distribution instead of simple even distribution
       const sessionLengths = optimizeSessionDistribution(task, totalHours, daysForTask, settings);
@@ -725,28 +839,40 @@ export const generateNewStudyPlan = (
       for (let i = 0; i < sessionLengths.length && i < daysForTask.length; i++) {
         const date = daysForTask[i];
         let dayPlan = studyPlans.find(p => p.date === date)!;
-        
+
         // Skip locked days during initial distribution
         if (dayPlan.isLocked) {
           unscheduledHours += sessionLengths[i];
           continue;
         }
-        
+
         let availableHours = dailyRemainingHours[date];
         const thisSessionLength = Math.min(sessionLengths[i], availableHours);
-        
+
         if (thisSessionLength > 0) {
           const roundedSessionLength = Math.round(thisSessionLength * 60) / 60;
-          dayPlan.plannedTasks.push({
-            taskId: task.id,
-            scheduledTime: `${date}`,
-            startTime: '',
-            endTime: '',
-            allocatedHours: roundedSessionLength,
-            sessionNumber: (dayPlan.plannedTasks.filter(s => s.taskId === task.id).length) + 1,
-            isFlexible: true,
-            status: 'scheduled'
-          });
+
+          // Check if this day already has a session for this task
+          const existingTaskSession = dayPlan.plannedTasks.find(s => s.taskId === task.id && s.status !== 'skipped');
+
+          if (existingTaskSession) {
+            // Extend the existing session instead of creating a new one
+            existingTaskSession.allocatedHours = Math.round((existingTaskSession.allocatedHours + roundedSessionLength) * 60) / 60;
+            console.log(`Extended existing session for "${task.title}" on ${date} to ${existingTaskSession.allocatedHours}h`);
+          } else {
+            // Create new session
+            dayPlan.plannedTasks.push({
+              taskId: task.id,
+              scheduledTime: `${date}`,
+              startTime: '',
+              endTime: '',
+              allocatedHours: roundedSessionLength,
+              sessionNumber: 1, // Start with 1, will be normalized later
+              isFlexible: true,
+              status: 'scheduled'
+            });
+          }
+
           dayPlan.totalStudyHours = Math.round((dayPlan.totalStudyHours + roundedSessionLength) * 60) / 60;
           dailyRemainingHours[date] = Math.round((dailyRemainingHours[date] - roundedSessionLength) * 60) / 60;
           totalHours = Math.round((totalHours - roundedSessionLength) * 60) / 60;
@@ -795,7 +921,9 @@ export const generateNewStudyPlan = (
     // Global redistribution pass: try to fit any remaining unscheduled hours
     const tasksWithUnscheduledHours = tasksEven.filter(task => {
       const scheduledHours = taskScheduledHours[task.id] || 0;
-      return task.estimatedHours - scheduledHours > 0;
+      const lockedHours = calculateLockedHours(task.id, studyPlans);
+      const adjustedEstimatedHours = Math.max(0, task.estimatedHours - lockedHours);
+      return adjustedEstimatedHours - scheduledHours > 0;
     });
     
     if (tasksWithUnscheduledHours.length > 0) {
@@ -809,8 +937,10 @@ export const generateNewStudyPlan = (
       
       for (const task of sortedTasksForGlobalRedistribution) {
         const scheduledHours = taskScheduledHours[task.id] || 0;
-        const unscheduledHours = task.estimatedHours - scheduledHours;
-        
+        const lockedHours = calculateLockedHours(task.id, studyPlans);
+        const adjustedEstimatedHours = Math.max(0, task.estimatedHours - lockedHours);
+        const unscheduledHours = adjustedEstimatedHours - scheduledHours;
+
         if (unscheduledHours <= 0) continue;
         
         // Get deadline for this task
@@ -847,8 +977,10 @@ export const generateNewStudyPlan = (
     // Check for unscheduled hours and create suggestions
     for (const task of tasksEven) {
       const scheduledHours = taskScheduledHours[task.id] || 0;
-      const unscheduledHours = task.estimatedHours - scheduledHours;
-      
+      const lockedHours = calculateLockedHours(task.id, studyPlans);
+      const adjustedEstimatedHours = Math.max(0, task.estimatedHours - lockedHours);
+      const unscheduledHours = adjustedEstimatedHours - scheduledHours;
+
       // Only show suggestions for tasks with more than 1 minute unscheduled (to avoid floating point precision issues)
       if (unscheduledHours > 0.016) { // 1 minute = 0.016 hours
         suggestions.push({
@@ -909,11 +1041,11 @@ export const generateNewStudyPlan = (
     
     // REDISTRIBUTE MISSED SESSIONS
     // After normal scheduling is complete, try to redistribute missed sessions
-    if (Object.keys(missedSessionHoursByTask).length > 0) {
+    if (Object.keys(missedSessionsByTask).length > 0) {
       console.log('Attempting to redistribute missed sessions...');
-      
+
       // Sort tasks with missed sessions by importance and deadline
-      const tasksWithMissedSessions = Object.keys(missedSessionHoursByTask)
+      const tasksWithMissedSessions = Object.keys(missedSessionsByTask)
         .map(taskId => tasksEven.find(t => t.id === taskId))
         .filter(task => task !== undefined)
         .sort((a, b) => {
@@ -921,13 +1053,21 @@ export const generateNewStudyPlan = (
           if (a.importance !== b.importance) return a.importance ? -1 : 1;
           return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
         });
-      
+
       for (const task of tasksWithMissedSessions) {
         if (!task) continue;
-        
-        const missedHours = missedSessionHoursByTask[task.id];
-        if (missedHours <= 0) continue;
-        
+
+        const missedSessions = missedSessionsByTask[task.id];
+        if (!missedSessions || missedSessions.length === 0) continue;
+
+        // Check if this task has sessions on locked days
+        const lockedHours = calculateLockedHours(task.id, studyPlans);
+
+        // Allow redistribution even if there are locked sessions, but prioritize them
+        if (lockedHours > 0) {
+          console.log(`Task "${task.title}" has ${lockedHours}h on locked days - redistributing ${missedSessions.length} missed sessions`);
+        }
+
         // Get deadline for this task
         const deadline = new Date(task.deadline);
         if (settings.bufferDays > 0) {
@@ -935,17 +1075,48 @@ export const generateNewStudyPlan = (
         }
         const deadlineDateStr = deadline.toISOString().split('T')[0];
         const daysForTask = availableDays.filter(d => d <= deadlineDateStr);
-        
-        // Try to redistribute missed session hours
-        const finalUnscheduledHours = redistributeUnscheduledHours(task, missedHours, daysForTask);
-        
-        if (finalUnscheduledHours < missedHours) {
-          console.log(`Successfully redistributed ${missedHours - finalUnscheduledHours} hours for task "${task.title}"`);
-        } else {
-          console.log(`Could not redistribute ${missedHours} hours for task "${task.title}"`);
+
+        // Redistribute each missed session individually to maintain session structure
+        let redistributedCount = 0;
+        for (const missedSession of missedSessions) {
+          const sessionHours = missedSession.allocatedHours;
+
+          // Try to find a day with existing sessions for this task first (to consolidate)
+          let bestDate = null;
+          let bestAvailableHours = 0;
+
+          for (const date of daysForTask) {
+            const dayPlan = studyPlans.find(p => p.date === date);
+            if (!dayPlan || dayPlan.isLocked) continue;
+
+            const availableHours = dailyRemainingHours[date];
+            if (availableHours >= sessionHours) {
+              const hasExistingSession = dayPlan.plannedTasks.some(s => s.taskId === task.id);
+
+              if (hasExistingSession && availableHours > bestAvailableHours) {
+                bestDate = date;
+                bestAvailableHours = availableHours;
+              } else if (!bestDate && !hasExistingSession) {
+                bestDate = date;
+                bestAvailableHours = availableHours;
+              }
+            }
+          }
+
+          if (bestDate) {
+            // Add the missed session to the best available day
+            const finalUnscheduledHours = redistributeUnscheduledHours(task, sessionHours, [bestDate]);
+
+            if (finalUnscheduledHours < sessionHours) {
+              redistributedCount++;
+              console.log(`Redistributed missed session for "${task.title}": ${sessionHours}h to ${bestDate}`);
+            }
+          }
         }
+
+        console.log(`Successfully redistributed ${redistributedCount}/${missedSessions.length} missed sessions for task "${task.title}"`);
       }
-      
+
       // Combine sessions again after missed session redistribution
       combineSessionsOnSameDay(studyPlans);
     }
@@ -1171,17 +1342,36 @@ export const generateNewStudyPlan = (
     const studyPlans: StudyPlan[] = [];
     const dailyRemainingHours: { [date: string]: number } = {};
     availableDays.forEach(date => {
-      dailyRemainingHours[date] = settings.dailyAvailableHours;
-      // Find existing plan to preserve isLocked property
+      // Find existing plan to preserve isLocked property and sessions
       const existingPlan = existingStudyPlans.find(p => p.date === date);
-      studyPlans.push({
-        id: `plan-${date}`,
-        date,
-        plannedTasks: [],
-        totalStudyHours: 0,
-        availableHours: settings.dailyAvailableHours,
-        isLocked: existingPlan?.isLocked || false
-      });
+
+      if (existingPlan?.isLocked) {
+        // For locked days, preserve existing sessions and calculate remaining capacity
+        const existingHours = existingPlan.plannedTasks.reduce((sum, session) => sum + session.allocatedHours, 0);
+        dailyRemainingHours[date] = Math.max(0, settings.dailyAvailableHours - existingHours);
+
+        studyPlans.push({
+          id: existingPlan.id || `plan-${date}`,
+          date,
+          plannedTasks: [...existingPlan.plannedTasks], // Preserve existing sessions
+          totalStudyHours: existingHours,
+          availableHours: settings.dailyAvailableHours,
+          isLocked: true
+        });
+
+        console.log(`Balanced mode: Preserved ${existingPlan.plannedTasks.length} sessions on locked day ${date} (${existingHours}h)`);
+      } else {
+        // For unlocked days, start fresh
+        dailyRemainingHours[date] = settings.dailyAvailableHours;
+        studyPlans.push({
+          id: `plan-${date}`,
+          date,
+          plannedTasks: [],
+          totalStudyHours: 0,
+          availableHours: settings.dailyAvailableHours,
+          isLocked: false
+        });
+      }
     });
 
     // Balanced distribution: Apply even distribution within priority tiers
@@ -1207,8 +1397,18 @@ export const generateNewStudyPlan = (
 
         if (daysForTask.length === 0) continue;
 
+        // Calculate remaining hours to distribute (excluding hours already allocated on locked days)
+        const lockedHours = calculateLockedHours(task.id, studyPlans);
+        const remainingHours = Math.max(0, task.estimatedHours - lockedHours);
+
+        // If all hours are already allocated on locked days, skip redistribution
+        if (remainingHours <= 0) {
+          console.log(`Balanced mode - Task "${task.title}": All ${task.estimatedHours}h already allocated on locked days`);
+          continue;
+        }
+
         // Use optimized session distribution for even spreading
-        const sessionLengths = optimizeSessionDistribution(task, task.estimatedHours, daysForTask, settings);
+        const sessionLengths = optimizeSessionDistribution(task, remainingHours, daysForTask, settings);
 
         for (let i = 0; i < sessionLengths.length && i < daysForTask.length; i++) {
           let dayIndex = i;
@@ -1247,13 +1447,17 @@ export const generateNewStudyPlan = (
           
           const date = daysForTask[dayIndex];
           const dayPlan = studyPlans.find(p => p.date === date)!;
-          
+          const availableHours = dailyRemainingHours[date];
+
           // Skip locked days during initial distribution
           if (dayPlan.isLocked) {
+            // Track unscheduled hours for redistribution
+            const sessionHours = Math.min(sessionLengths[i], availableHours);
+            if (sessionHours > 0) {
+              console.log(`Balanced mode: Skipping ${sessionHours}h for "${task.title}" on locked day ${date}`);
+            }
             continue;
           }
-          
-          const availableHours = dailyRemainingHours[date];
           const thisSessionLength = Math.min(sessionLengths[i], availableHours);
 
           if (thisSessionLength > 0) {
@@ -1445,17 +1649,36 @@ export const generateNewStudyPlan = (
   const studyPlans: StudyPlan[] = [];
   const dailyRemainingHours: { [date: string]: number } = {};
   availableDays.forEach(date => {
-    dailyRemainingHours[date] = settings.dailyAvailableHours;
-    // Find existing plan to preserve isLocked property
+    // Find existing plan to preserve isLocked property and sessions
     const existingPlan = existingStudyPlans.find(p => p.date === date);
-    studyPlans.push({
-      id: `plan-${date}`,
-      date,
-      plannedTasks: [],
-      totalStudyHours: 0,
-      availableHours: settings.dailyAvailableHours,
-      isLocked: existingPlan?.isLocked || false
-    });
+
+    if (existingPlan?.isLocked) {
+      // For locked days, preserve existing sessions and calculate remaining capacity
+      const existingHours = existingPlan.plannedTasks.reduce((sum, session) => sum + session.allocatedHours, 0);
+      dailyRemainingHours[date] = Math.max(0, settings.dailyAvailableHours - existingHours);
+
+      studyPlans.push({
+        id: existingPlan.id || `plan-${date}`,
+        date,
+        plannedTasks: [...existingPlan.plannedTasks], // Preserve existing sessions
+        totalStudyHours: existingHours,
+        availableHours: settings.dailyAvailableHours,
+        isLocked: true
+      });
+
+      console.log(`Eisenhower mode: Preserved ${existingPlan.plannedTasks.length} sessions on locked day ${date} (${existingHours}h)`);
+    } else {
+      // For unlocked days, start fresh
+      dailyRemainingHours[date] = settings.dailyAvailableHours;
+      studyPlans.push({
+        id: `plan-${date}`,
+        date,
+        plannedTasks: [],
+        totalStudyHours: 0,
+        availableHours: settings.dailyAvailableHours,
+        isLocked: false
+      });
+    }
   });
 
   let taskScheduledHours: { [taskId: string]: number } = {};
@@ -1492,7 +1715,11 @@ export const generateNewStudyPlan = (
     });
     for (const task of tasksForDay) {
       if (availableHours <= 0) break;
-      const remainingTaskHours = task.estimatedHours - taskScheduledHours[task.id];
+
+      // Calculate locked hours for this task
+      const lockedHours = calculateLockedHours(task.id, studyPlans);
+      const adjustedEstimatedHours = Math.max(0, task.estimatedHours - lockedHours);
+      const remainingTaskHours = adjustedEstimatedHours - taskScheduledHours[task.id];
       if (remainingTaskHours <= 0) continue;
       // Allocate as much as possible for this task
       // For one-time tasks, schedule all remaining hours at once if possible

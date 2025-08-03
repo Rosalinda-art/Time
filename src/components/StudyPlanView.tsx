@@ -4,6 +4,7 @@ import { StudyPlan, Task, StudySession, FixedCommitment, UserSettings } from '..
 import { formatTime, generateSmartSuggestions, getLocalDateString, checkSessionStatus, getDailyAvailableTimeSlots, findNextAvailableStartTime, moveIndividualSession, redistributeMissedSessionsEnhanced, skipSessionEnhanced, validateTimeSlot } from '../utils/scheduling';
 import { RedistributionOptions } from '../types';
 
+
 interface StudyPlanViewProps {
   studyPlans: StudyPlan[];
   tasks: Task[];
@@ -271,11 +272,11 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
   };
 
   // Lock day handler
-  const handleToggleDayLock = (date: string, currentLockState: boolean) => {
+  const handleToggleDayLock = (date: string, newLockState: boolean) => {
     if (onToggleDayLock) {
-      onToggleDayLock(date, !currentLockState);
+      onToggleDayLock(date, newLockState);
       setNotificationMessage(
-        !currentLockState 
+        newLockState
           ? `Day locked! Sessions on ${new Date(date).toLocaleDateString()} are now protected from changes.`
           : `Day unlocked! Sessions on ${new Date(date).toLocaleDateString()} can now be modified.`
       );
@@ -771,6 +772,8 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
       )}
 
 
+
+
       
       {/* Today's Study Plan */}
       {!isTodayWorkDay ? (
@@ -813,20 +816,16 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
                   <Lightbulb className="text-yellow-600 dark:text-yellow-400" size={16} />
                 </button>
               )}
-              <button 
-                onClick={() => handleToggleDayLock(todaysPlan.date, todaysPlan.isLocked || false)}
+              <button
+                onClick={() => handleToggleDayLock(todaysPlan.date, !(todaysPlan.isLocked || false))}
                 className={`ml-2 p-1.5 rounded-full transition-colors duration-200 ${
-                  todaysPlan.isLocked 
-                    ? 'bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:hover:bg-red-800' 
-                    : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600'
+                  todaysPlan.isLocked
+                    ? 'text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 dark:hover:bg-yellow-900/20'
+                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
                 }`}
                 title={todaysPlan.isLocked ? "Unlock day - Allow changes to today's sessions" : "Lock day - Protect today's sessions from changes"}
               >
-                {todaysPlan.isLocked ? (
-                  <Lock className="text-red-600 dark:text-red-400" size={16} />
-                ) : (
-                  <Unlock className="text-gray-600 dark:text-gray-400" size={16} />
-                )}
+                {todaysPlan.isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
               </button>
             </h2>
             <div className="flex items-center space-x-4">
@@ -1201,20 +1200,16 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
                           Locked
                         </span>
                       )}
-                      <button 
-                        onClick={() => handleToggleDayLock(plan.date, plan.isLocked || false)}
-                        className={`p-1 rounded transition-colors duration-200 ${
-                          plan.isLocked 
-                            ? 'bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:hover:bg-red-800' 
-                            : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600'
+                      <button
+                        onClick={() => handleToggleDayLock(plan.date, !(plan.isLocked || false))}
+                        className={`p-1.5 rounded-full transition-colors duration-200 ${
+                          plan.isLocked
+                            ? 'text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 dark:hover:bg-yellow-900/20'
+                            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
                         }`}
                         title={plan.isLocked ? "Unlock day - Allow changes to this day's sessions" : "Lock day - Protect this day's sessions from changes"}
                       >
-                        {plan.isLocked ? (
-                          <Lock className="text-red-600 dark:text-red-400" size={14} />
-                        ) : (
-                          <Unlock className="text-gray-600 dark:text-gray-400" size={14} />
-                        )}
+                        {plan.isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
                       </button>
                     </div>
                     <div className="flex items-center space-x-2">
