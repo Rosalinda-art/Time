@@ -771,18 +771,7 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
         </div>
       )}
 
-      {/* Lock Day Management */}
-      <LockDayManager
-        studyPlans={studyPlans}
-        tasks={tasks}
-        settings={settings}
-        fixedCommitments={fixedCommitments}
-        onToggleDayLock={handleToggleDayLock}
-        onRedistributePlans={(newPlans) => {
-          // This would need to be handled by the parent component
-          console.log('Plans redistributed:', newPlans);
-        }}
-      />
+
 
 
       
@@ -801,7 +790,7 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
             </p>
             <div className="bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900 dark:to-pink-900 rounded-lg p-4">
               <p className="text-sm text-gray-700 dark:text-gray-200">
-                <span className="font-medium">Pro tip:</span> Use this time to plan your next study session or just enjoy your well-deserved break! ���
+                <span className="font-medium">Pro tip:</span> Use this time to plan your next study session or just enjoy your well-deserved break! ✨
               </p>
             </div>
           </div>
