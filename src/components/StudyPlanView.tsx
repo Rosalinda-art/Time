@@ -772,6 +772,19 @@ const StudyPlanView: React.FC<StudyPlanViewProps> = ({ studyPlans, tasks, fixedC
         </div>
       )}
 
+      {/* Lock Day Management */}
+      <LockDayManager
+        studyPlans={studyPlans}
+        tasks={tasks}
+        settings={settings}
+        fixedCommitments={fixedCommitments}
+        onToggleDayLock={handleToggleDayLock}
+        onRedistributePlans={(newPlans) => {
+          // This would need to be handled by the parent component
+          console.log('Plans redistributed:', newPlans);
+        }}
+      />
+
 
       
       {/* Today's Study Plan */}
