@@ -674,8 +674,16 @@ export class EnhancedRedistributionEngine {
       const targetPlan = workingPlans.find(p => p.date === targetDateStr);
       const existingSessions = targetPlan ? targetPlan.plannedTasks : [];
       
-      // Skip locked days
+      // Skip locked days - sessions cannot be redistributed TO locked days
       if (targetPlan?.isLocked) {
+        continue;
+      }
+
+      // Additional check: Don't redistribute sessions FROM locked days
+      // unless specifically marked for redistribution due to conflicts
+      if (missedSession.session.status !== 'missed' &&
+          missedSession.session.originalDate &&
+          targetPlan?.isLocked) {
         continue;
       }
       
