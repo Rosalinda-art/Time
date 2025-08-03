@@ -839,28 +839,40 @@ export const generateNewStudyPlan = (
       for (let i = 0; i < sessionLengths.length && i < daysForTask.length; i++) {
         const date = daysForTask[i];
         let dayPlan = studyPlans.find(p => p.date === date)!;
-        
+
         // Skip locked days during initial distribution
         if (dayPlan.isLocked) {
           unscheduledHours += sessionLengths[i];
           continue;
         }
-        
+
         let availableHours = dailyRemainingHours[date];
         const thisSessionLength = Math.min(sessionLengths[i], availableHours);
-        
+
         if (thisSessionLength > 0) {
           const roundedSessionLength = Math.round(thisSessionLength * 60) / 60;
-          dayPlan.plannedTasks.push({
-            taskId: task.id,
-            scheduledTime: `${date}`,
-            startTime: '',
-            endTime: '',
-            allocatedHours: roundedSessionLength,
-            sessionNumber: (dayPlan.plannedTasks.filter(s => s.taskId === task.id).length) + 1,
-            isFlexible: true,
-            status: 'scheduled'
-          });
+
+          // Check if this day already has a session for this task
+          const existingTaskSession = dayPlan.plannedTasks.find(s => s.taskId === task.id && s.status !== 'skipped');
+
+          if (existingTaskSession) {
+            // Extend the existing session instead of creating a new one
+            existingTaskSession.allocatedHours = Math.round((existingTaskSession.allocatedHours + roundedSessionLength) * 60) / 60;
+            console.log(`Extended existing session for "${task.title}" on ${date} to ${existingTaskSession.allocatedHours}h`);
+          } else {
+            // Create new session
+            dayPlan.plannedTasks.push({
+              taskId: task.id,
+              scheduledTime: `${date}`,
+              startTime: '',
+              endTime: '',
+              allocatedHours: roundedSessionLength,
+              sessionNumber: 1, // Start with 1, will be normalized later
+              isFlexible: true,
+              status: 'scheduled'
+            });
+          }
+
           dayPlan.totalStudyHours = Math.round((dayPlan.totalStudyHours + roundedSessionLength) * 60) / 60;
           dailyRemainingHours[date] = Math.round((dailyRemainingHours[date] - roundedSessionLength) * 60) / 60;
           totalHours = Math.round((totalHours - roundedSessionLength) * 60) / 60;
