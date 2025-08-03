@@ -697,11 +697,11 @@ export const generateNewStudyPlan = (
       const deadlineDateStr = deadline.toISOString().split('T')[0];
       // Include all available days up to and including the deadline day
       let daysForTask = availableDays.filter(d => d <= deadlineDateStr);
-      
+
       // Apply frequency preference if enabled and no conflict detected
       if (task.respectFrequencyForDeadlines !== false && task.targetFrequency) {
         const conflictCheck = checkFrequencyDeadlineConflict(task, settings);
-        
+
         if (!conflictCheck.hasConflict) {
           // Apply frequency filtering to respect user preference
           let sessionGap = 1; // Days between sessions
@@ -712,7 +712,7 @@ export const generateNewStudyPlan = (
             sessionGap = task.importance ? 2 : 3; // More frequent for important tasks
           }
           // daily frequency uses sessionGap = 1 (no filtering needed)
-          
+
           if (sessionGap > 1) {
             // Filter days to respect frequency preference
             const frequencyFilteredDays: string[] = [];
@@ -723,15 +723,35 @@ export const generateNewStudyPlan = (
           }
         }
       }
-      
 
-      
+
+
       // If no days available, skip this task
       if (daysForTask.length === 0) {
         continue;
       }
-      
-      let totalHours = task.estimatedHours;
+
+      // Calculate remaining hours to distribute (excluding hours already allocated on locked days)
+      let lockedHours = 0;
+      studyPlans.forEach(plan => {
+        if (plan.isLocked) {
+          plan.plannedTasks.forEach(session => {
+            if (session.taskId === task.id) {
+              lockedHours += session.allocatedHours;
+            }
+          });
+        }
+      });
+
+      const totalHours = Math.max(0, task.estimatedHours - lockedHours);
+
+      // If all hours are already allocated on locked days, skip redistribution
+      if (totalHours <= 0) {
+        console.log(`Task "${task.title}": All ${task.estimatedHours}h already allocated on locked days`);
+        continue;
+      }
+
+      console.log(`Task "${task.title}": ${totalHours}h remaining after ${lockedHours}h on locked days`);
       
       // Use optimized session distribution instead of simple even distribution
       const sessionLengths = optimizeSessionDistribution(task, totalHours, daysForTask, settings);
