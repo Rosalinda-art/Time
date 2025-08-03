@@ -884,8 +884,22 @@ export const generateNewStudyPlan = (
     // Check for unscheduled hours and create suggestions
     for (const task of tasksEven) {
       const scheduledHours = taskScheduledHours[task.id] || 0;
-      const unscheduledHours = task.estimatedHours - scheduledHours;
-      
+
+      // Calculate locked hours for this task
+      let lockedHours = 0;
+      studyPlans.forEach(plan => {
+        if (plan.isLocked) {
+          plan.plannedTasks.forEach(session => {
+            if (session.taskId === task.id) {
+              lockedHours += session.allocatedHours;
+            }
+          });
+        }
+      });
+
+      const adjustedEstimatedHours = Math.max(0, task.estimatedHours - lockedHours);
+      const unscheduledHours = adjustedEstimatedHours - scheduledHours;
+
       // Only show suggestions for tasks with more than 1 minute unscheduled (to avoid floating point precision issues)
       if (unscheduledHours > 0.016) { // 1 minute = 0.016 hours
         suggestions.push({
