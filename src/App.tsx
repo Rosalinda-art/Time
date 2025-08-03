@@ -2860,7 +2860,7 @@ function App() {
                                         <div className="grid grid-cols-3 gap-2">
                                             {[
                                                 { amount: '₱50', emoji: '☕', desc: 'Coffee' },
-                                                { amount: '₱100', emoji: '���', desc: 'Pizza' },
+                                                { amount: '₱100', emoji: '🍕', desc: 'Pizza' },
                                                 { amount: '₱200', emoji: '🎉', desc: 'Party' }
                                             ].map((item, index) => (
                                                 <div
