@@ -463,7 +463,7 @@ export const generateNewStudyPlan = (
       }
       tempDate.setDate(tempDate.getDate() + 1);
     }
-    
+
     // When buffer days is 0, ensure we include the deadline day itself
     if (settings.bufferDays === 0) {
       // Add any missing deadline days that might not be included due to time zone issues
@@ -488,22 +488,41 @@ export const generateNewStudyPlan = (
       // Sort available days to maintain order
       availableDays.sort();
     }
-    
+
 
     const studyPlans: StudyPlan[] = [];
     const dailyRemainingHours: { [date: string]: number } = {};
     availableDays.forEach(date => {
-      dailyRemainingHours[date] = settings.dailyAvailableHours;
-      // Find existing plan to preserve isLocked property
+      // Find existing plan to preserve isLocked property and sessions
       const existingPlan = existingStudyPlans.find(p => p.date === date);
-      studyPlans.push({
-        id: `plan-${date}`,
-        date,
-        plannedTasks: [],
-        totalStudyHours: 0,
-        availableHours: settings.dailyAvailableHours,
-        isLocked: existingPlan?.isLocked || false
-      });
+
+      if (existingPlan?.isLocked) {
+        // For locked days, preserve existing sessions and calculate remaining capacity
+        const existingHours = existingPlan.plannedTasks.reduce((sum, session) => sum + session.allocatedHours, 0);
+        dailyRemainingHours[date] = Math.max(0, settings.dailyAvailableHours - existingHours);
+
+        studyPlans.push({
+          id: existingPlan.id || `plan-${date}`,
+          date,
+          plannedTasks: [...existingPlan.plannedTasks], // Preserve existing sessions
+          totalStudyHours: existingHours,
+          availableHours: settings.dailyAvailableHours,
+          isLocked: true
+        });
+
+        console.log(`Preserved ${existingPlan.plannedTasks.length} sessions on locked day ${date} (${existingHours}h)`);
+      } else {
+        // For unlocked days, start fresh
+        dailyRemainingHours[date] = settings.dailyAvailableHours;
+        studyPlans.push({
+          id: `plan-${date}`,
+          date,
+          plannedTasks: [],
+          totalStudyHours: 0,
+          availableHours: settings.dailyAvailableHours,
+          isLocked: false
+        });
+      }
     });
     let evenTaskScheduledHours: { [taskId: string]: number } = {};
     tasksEven.forEach(task => {
